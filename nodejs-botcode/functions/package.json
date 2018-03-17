@@ -1,0 +1,20 @@
+{
+  "name": "silly-name-maker",
+  "description": "Popcorn bot",
+  "version": "0.0.1",
+  "author": "Google Inc.",
+  "scripts": {
+    "deploy": "firebase deploy --only functions",
+    "mdp": "firebase deploy --only functions; say finished"
+  },
+  "engines": {
+    "node": "~4.2"
+  },
+  "dependencies": {
+    "actions-on-google": "^1.0.0",
+    "axios": "^0.17.1",
+    "firebase-admin": "^4.2.1",
+    "firebase-functions": "^0.5.7",
+    "request": "^2.83.0"
+  }
+}

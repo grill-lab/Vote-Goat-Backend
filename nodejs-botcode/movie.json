@@ -1,0 +1,124 @@
+{
+  "id": "09ffe2eb-bf50-431a-bf02-45ea43f47059",
+  "name": "moreMovieInfo",
+  "auto": true,
+  "contexts": [],
+  "responses": [
+    {
+      "resetContexts": false,
+      "action": "moreMovieInfo",
+      "affectedContexts": [],
+      "parameters": [],
+      "messages": [
+        {
+          "type": 0,
+          "speech": []
+        }
+      ],
+      "defaultResponsePlatforms": {},
+      "speech": []
+    }
+  ],
+  "priority": 500000,
+  "cortanaCommand": {
+    "navigateOrService": "NAVIGATE",
+    "target": ""
+  },
+  "webhookUsed": true,
+  "webhookForSlotFilling": false,
+  "lastUpdate": 1511788006,
+  "fallbackIntent": false,
+  "events": [],
+  "userSays": [
+    {
+      "id": "77c4f75f-7042-4db3-ba81-7db1479d05d9",
+      "data": [
+        {
+          "text": "more movie details"
+        }
+      ],
+      "isTemplate": false,
+      "count": 0,
+      "isAuto": false
+    },
+    {
+      "id": "ba97baa1-346d-48d4-b0fe-335139e19b7c",
+      "data": [
+        {
+          "text": "what is this movie's IMDB rating"
+        }
+      ],
+      "isTemplate": false,
+      "count": 0,
+      "updated": 1511788006,
+      "isAuto": false
+    },
+    {
+      "id": "d15e6e0a-723c-48dd-a31d-38f8f35cdfd3",
+      "data": [
+        {
+          "text": "who acted in this movie"
+        }
+      ],
+      "isTemplate": false,
+      "count": 0,
+      "updated": 1511788006,
+      "isAuto": false
+    },
+    {
+      "id": "9ed6d1e3-6e93-426e-b00e-b739f017aade",
+      "data": [
+        {
+          "text": "who are the actors in this movie"
+        }
+      ],
+      "isTemplate": false,
+      "count": 0,
+      "updated": 1511788006,
+      "isAuto": false
+    },
+    {
+      "id": "0a7d9f7a-f43c-40a8-a3f8-b86ad234919f",
+      "data": [
+        {
+          "text": "who directed this movie"
+        }
+      ],
+      "isTemplate": false,
+      "count": 0,
+      "updated": 1511788006,
+      "isAuto": false
+    },
+    {
+      "id": "d4005252-0471-49a9-b246-3c1d4c1e0100",
+      "data": [
+        {
+          "text": "provide more information"
+        }
+      ],
+      "isTemplate": false,
+      "count": 0,
+      "updated": 1511788006,
+      "isAuto": false
+    },
+    {
+      "id": "1a333256-8db2-4b0e-b251-df95a6db8a75",
+      "data": [
+        {
+          "text": "more movie "
+        },
+        {
+          "text": "information",
+          "meta": "@sys.ignore",
+          "userDefined": false
+        }
+      ],
+      "isTemplate": false,
+      "count": 0,
+      "updated": 1511788006,
+      "isAuto": false
+    }
+  ],
+  "followUpIntents": [],
+  "templates": []
+}
