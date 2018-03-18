@@ -1,9 +1,5 @@
 # HUG.Rest MongoDB API!
 
-Using the 'ubuntu' user, so that all team members have access to the HUG REST server!
-
-Don't use your google cloud account (mine is g2288733m), they're encrypted from other users.
-
 # STEP 1: INSTALL!
 
 sudo apt-get install python3-numpy python3-dev python3-pip python3-wheel nginx python3-venv
