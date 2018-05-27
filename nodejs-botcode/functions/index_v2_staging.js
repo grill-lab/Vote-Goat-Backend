@@ -51,23 +51,32 @@ function catch_error(conv, error_message, intent) {
   );
 }
 
-function parse_parameter_list (input_dialogflow_parameter) {
+function parse_parameter_list (input_dialogflow_parameter, separator) {
   /*
     Parse the input parameter data from dialogflow
-    Outputs a space separated string ready for the HUG REST API GET request
+    Outputs a parsed array string ready for the HUG REST API GET request
     Should work for any 'list' type parameter.
   */
-  var space_separated_string; // What we're going to return to the user
+  var parsed_array_string; // What we're going to return to the user
 
   if (typeof input_dialogflow_parameter !== 'undefined' && (input_dialogflow_parameter.length > 0) && Array.isArray(input_dialogflow_parameter)) { // Validating movie genre user input
     // Genres are present in the user's input
-    space_separated_string = input_dialogflow_parameter.join(' '); // Merge into a string for GET request
+    if (separator === ', ' && input_dialogflow_parameter.length > 1) { // More than one genre? Engage!
+      // For displaying a comma separated string to the user
+      var editing_input_array = input_dialogflow_parameter;
+      const array_size = editing_input_array.length;
+      editing_input_array[array_size - 1] = 'and ' + editing_input_array[array_size - 1]; // We're setting the last actor array element to 'and <actor>'
+      parsed_array_string = (editing_input_array.join(', ')).replace(', and', ' and'); // Merge into a string, optimize gramar.
+    } else {
+      // For use in HUG REST query
+      parsed_array_string = input_dialogflow_parameter.join(separator); // Merge into a string for GET request
+    }
   } else {
     // The input_dialogflow_parameter parameter didn't pass validation
-    space_separated_string = ' ';
+    parsed_array_string = ' ';
   }
 
-  return space_separated_string; // Onwards to the HUG GET request!
+  return parsed_array_string; // Onwards to the HUG GET request!
 }
 
 function chatbase_analytics(conv, input_message, input_intent, win_or_fail) {
@@ -806,6 +815,318 @@ app.intent('voted', (conv, { voting })) = {
     // No 'vote_cotext' context detected!
     handle_no_contexts(app);
   }
+}
+
+app.intent('getGoat', (conv, { movieGenre }) => {
+  /*
+  Displaying the most upvoted movies to the user in a simple/dumb manner.
+  Can't produce tables, could create a list/carousel but that'd take more time than remaining.
+  Can't produce many outbound links.
+  */
+  conv.user.storage.fallbackCount = 0; // Required for tracking fallback attempts! // For fallback handling
+
+  const movie_genres_string = parse_parameter_list(movieGenre, ' '); // parse movieGenre dialogflow parameter input
+  const movie_genres_comma_separated_string = parse_parameter_list(movieGenre, ', '); // parse movieGenre dialogflow parameter input
+
+  const placeholder = {}; // The dict which will hold our parameter data
+  placeholder['placeholder'] = 'placeholder'; // We need this placeholder
+  app.setContext('home', 1, placeholder); // We need to insert data into the 'home' context for the home fallback to trigger! (Maybe not?..)
+
+  const qs_input = {
+    //  HUG REST GET request parameters
+    genres: movie_genres_string, // Anonymous google id
+    api_key: 'API_KEY'
+  };
+
+  return hug_request('HUG', 'get_goat_movies', 'GET', qs_input)
+  .then(body => {
+    if (body.length > 1) {
+      if (body[0].success === true && body[0].valid_key === true) {
+        // We've got movies to display!
+        var movie_title_length_limit;
+        var genre_title = ``;
+        var goat_text = ``;
+        var textToSpeech = ``;
+        var goat_voice = ``;
+        var textToSpeech = ``;
+        var textToDisplay = ``;
+        var quantity_results;
+
+        if (hasScreen === true) {
+          quantity_results = 10;
+        } else {
+          quantity_results = 3;
+        }
+
+        if (movieGenre.length > 0) {
+          /*
+          We need to account for the length of the genres in the SSML.
+          Otherwise, validation will fail!
+          body.length == quantity of movies returned in GOAT list!
+          */
+          movie_title_length_limit = Math.floor((640 - 72 - movie_genres_comma_separated_string.length)/body.length);
+        } else {
+          /*
+          No genres input, increase the title length limit!
+          */
+          movie_title_length_limit = Math.floor((640 - 72)/body.length)
+        }
+
+        const hasScreen = conv.surface.capabilities.has('actions.capability.SCREEN_OUTPUT');
+        if (hasScreen === true) {
+          // TODO: Make use of table cards to display this information once it's no longer in developer preview
+          var sum_movie_title_lengths; // Var to hold summed length of movie titles
+          for (var index = 0; index < body.length; index++) {
+            /*
+              Iterate over movies in GOAT list to check max length of movie titles
+            */
+            sum_movie_title_lengths += body[index].title;
+          }
+
+            for (var index = 0; index < body.length; index++) {
+              // Iterate over movies in GOAT list
+              let current_rank = index + 1; // Movie's ranking in GOAT list
+              var movie_title; // Will populate with value in if statement
+
+              if (sum_movie_title_lengths > movie_title_length_limit) {
+                let temp_title = body[index].title; // Temporary var for holding title text
+                movie_title = temp_title.substring(0, movie_title_length_limit); // Reducing the length of the movie title
+              } else {
+                movie_title = body[index].title; // non-limited movie title
+              }
+
+              if (index != (body.length - 1)) {
+                goat_text += `${current_rank}: "${movie_title}" (${body[index].year}) \n`;
+              } else {
+                goat_text += `${current_rank}: "${movie_title}" (${body[index].year})`;
+              }
+              goat_voice += `${limited_title}<break time="0.3s" />`;
+            }
+
+
+          if (movie_genres_comma_separated_string.length > 2) {
+            // The user provided genre parameters
+            // >2 because no movie genres is ` `
+            textToSpeech = `<speak>` +
+                             `The greatest ${movie_genres_comma_separated_string} movies of all time, as determined by our userbase are: <break time="0.35s" /> ` +
+                              goat_voice +
+                           `</speak>`;
+            speechToText = `The greatest ${movie_genres_comma_separated_string} movies of all time, as determined by our userbase are: \n\n` +
+                              goat_text;
+          } else {
+            // The user didn't provide genre parameters
+            textToSpeech = `<speak>` +
+                             `The greatest movies of all time, as determined by our userbase are: <break time="0.35s" /> ` +
+                              goat_voice +
+                           `</speak>`;
+            speechToText = `The greatest movies of all time, as determined by our userbase are: \n\n` +
+                              goat_text;
+          }
+
+          // The user has a screen, let's show them a card with some 'pro tips'
+          let pro_tips = `These GOAT results are dynamically generated by our active userbase's movie rankings. ` +
+                           `You can specify multiple genres to view different GOAT results ` +
+                           `(E.g "greatest scary funny movies of all time)."` +
+                           `Try looking for these movies on YouTube or the Google Play Movie store.`;
+          conv.ask(
+            new BasicCard({
+              title: `🐐 GOAT (Greatest Of All Time) Movie Tips!`,
+              text: pro_tips,/*
+              buttons: new Button({
+                title: `🍿 ?`,
+                url: ``,
+              }),
+              image: {
+                url: `${URL}`,
+                accessibilityText: `${alt_text}`,
+              },*/
+              display: 'WHITE'
+            })
+          );
+
+        } else {
+          /*
+            The user doesn't have a screen!
+            Best practice is to only present 3 list results, not 10.
+            We aught to provide some sort of paging to
+          */
+          const genre_title = movie_genres_parameter_data.join(', ')
+          if (genre_title != ``) {
+            textToSpeech = `<speak>The 3 greatest ${genre_title} movies of all time, as determined by our userbase are: <break time="0.35s" />`;
+            textToDisplay = `The 3 greatest ${genre_title} movies of all time, as determined by our userbase are:`;
+          } else {
+            textToSpeech = `<speak>` +
+              `The 3 greatest movies of all time, as determined by our userbase are: <break time="0.35s" />`;
+            textToDisplay = `The 3 greatest movies of all time, as determined by our userbase are:`;
+          }
+
+          textToSpeech += `<say-as interpret-as="ordinal">1</say-as> place is ${body[0].title},<break time="0.1s" /> released in ${body[0].year}. <break time="0.35s" />` +
+          `<say-as interpret-as="ordinal">2</say-as> place is ${body[1].title},<break time="0.1s" /> released in ${body[1].year}. <break time="0.35s" />` +
+          `<say-as interpret-as="ordinal">3</say-as> place is ${body[2].title},<break time="0.1s" /> released in ${body[2].year}. <break time="0.35s" />` +
+          `</speak>`;
+
+          textToDisplay += `1st place is ${body[0].title}, released in ${body[0].year}.` +
+          `2nd place is ${body[1].title}, released in ${body[1].year}.` +
+          `3rd place is ${body[2].title}, released in ${body[2].year}.`;
+        }
+
+        conv.ask(
+          new SimpleResponse({
+            speech: textToSpeech,
+            text: textToDisplay
+          }),
+          new SimpleResponse({
+            speech: `<speak>What do you want to do next?<break time="0.25s" /> Rank Movies<break time="0.175s" />, get a Movie Recommendation<break time="0.175s" />, view your stats<break time="0.175s" />, get help using Vote Goat<break time="0.175s" /> or quit? <break time="0.25s" /></speak> `,
+            text: `What do you want to do next? Rank Movies, get a Movie Recommendation, view your stats, get help or quit?`
+          })
+        );
+
+        if (hasScreen === true) {
+          // The user has a screen, let's show them suggestion buttons.
+          conv.ask(
+            new Suggestions('🗳 Rank Movies', '🤔 Movie Recommendation', '🏆 Show Stats', '📑 Help', `🚪 Quit`)
+          );
+        }
+      } else {
+        // This should never trigger, but better safer than sorry!
+        return catch_error(conv, 'Unexpected error!', 'GOAT');
+      }
+    } else if (body.success === false && body.valid_key === true) {
+      /*
+        We've not got movies to display!
+        Perhaps this is because the user has entered too many movie genres?
+      */
+      var textToSpeech;
+      var speechToText;
+
+      if (movie_genres_parameter_data.length > 0) {
+        textToSpeech = `<speak>` +
+          `I'm sorry, Vote Goat was unable to find any movies with the genres ${movie_genres_comma_separated_string}. <break time="0.35s" /> ` +
+          `What do you want to do next?<break time="0.25s" /> Rank Movies<break time="0.175s" />, get a Movie Recommendation<break time="0.175s" />, view your stats<break time="0.175s" />, get help<break time="0.175s" /> or quit? <break time="0.25s" />` +
+          `</speak>`;
+        textToDisplay = `I'm sorry, Vote Goat was unable to find any movies with the genres ${movie_genres_comma_separated_string}. \n\n\n\n ` +
+                       `What do you want to do next? Rank Movies, get a Movie Recommendation, view your stats, get help or quit?`;
+      } else {
+        // This should never trigger.. there are earlier checks to prevent this...
+        textToSpeech = `<speak>` +
+          `I'm sorry, Vote Goat was unable to find any top movies. <break time="0.35s" /> ` +
+          `What do you want to do next?<break time="0.25s" /> Rank Movies<break time="0.175s" />, get a Movie Recommendation<break time="0.175s" />, view your stats<break time="0.175s" />, get help<break time="0.175s" /> or quit? <break time="0.25s" />` +
+          `</speak>`;
+        textToDisplay = `I'm sorry, Vote Goat was unable to find any top movies. \n\n ` +
+                       `What do you want to do next? Rank Movies, get a Movie Recommendation, view your stats, get help or quit?`;
+      }
+
+      conv.ask(
+        new SimpleResponse({
+          speech: textToSpeech,
+          text: textToDisplay
+        })
+      );
+
+      if (hasScreen === true) {
+        // The user has a screen, let's show them suggestion buttons.
+        conv.ask(
+          new Suggestions('🗳 Rank Movies', '🤔 Movie Recommendation', '🏆 Show Stats', '📑 Help', `🚪 Quit`)
+        );
+      }
+
+    } else {
+      // An invalid api_key, shouldn't happen..
+      return catch_error(conv, 'ERROR! Invalid HUG REST API key?', 'GOAT');
+    }
+  })
+  .catch(error_message => {
+    return catch_error(conv, error_message, 'progress_notification');
+  });
+}
+
+app.intent('getLeaderboard', (conv)) = {
+  /*
+    We want to gamify the bot, so that we encourage people to vote as much as possible.
+    The more voting data we have, the better recommendations we can provide to everyone!
+  */
+  const intent_fallback_messages = [
+    "Sorry, what do you want to do next?",
+    "I didn't catch that. Do you want to rank movies, receive movie recommendations, view your leaderboard position or get help using Vote Goat?",
+    "I'm having difficulties understanding what you want to do with Vote Goat. Do you want to rank movies, receive personalized movie recommendations, view your Vote Goat leaderboard position or learn how to use Vote Goat?"
+  ];
+
+  const qs_input = {
+    //  HUG REST GET request parameters
+    gg_id: userId, // Anonymous google id
+    api_key: 'API_KEY'
+  };
+
+  return hug_request('HUG', 'get_user_ranking', 'GET', qs_input)
+  .then(body => {
+    const hasScreen = conv.surface.capabilities.has('actions.capability.SCREEN_OUTPUT');
+
+    if (body.success === true && body.valid_key === true) {
+
+      var textToSpeech;
+      var displayText;
+
+      if (body.total_movie_votes > 0) {
+        textToSpeech = `<speak>` +
+          `You're currently ranked <say-as interpret-as="ordinal">${body.movie_leaderboard_ranking}</say-as> out of ${body.quantity_users} users! <break time="0.5s" /> ` +
+          `You've rated ${body.total_movie_votes} movies in total, of which ${body.total_movie_upvotes} were upvotes and ${body.total_movie_downvotes} were downvotes! <break time="1.5s" /> ` +
+          `What do you want to do next? Rank Movies, or get a Movie Recommendation? <break time="0.25s" /> ` +
+          `</speak>`;
+
+        textToDisplay = `You're currently ranked ${body.movie_leaderboard_ranking} out of ${body.quantity_users} users! \n\n ` +
+          `You've rated ${body.total_movie_votes} movies in total, of which ${body.total_movie_upvotes} were upvotes and ${body.total_movie_downvotes} were downvotes! \n\n ` +
+          `What do you want to do next? Rank Movies, or get a Movie Recommendation?`;
+      } else {
+        textToSpeech = `<speak>` +
+          `You've yet to rank any movies; please rank some movies, the more you vote the better the movie recommendations we can create. ` +
+          `What do you want to do next? Rank Movies, or get help using Vote Goat? <break time="0.25s" /> ` +
+          `</speak>`;
+
+        textToDisplay = `You've yet to rank any movies; please rank some movies, the more you vote the better the movie recommendations we can create. ` +
+          `What do you want to do next? Rank Movies, or get help using Vote Goat? <break time="0.25s" /> `;
+      }
+
+      conv.ask(
+        new SimpleResponse({
+          // Sending the details to the user
+          speech: textToSpeech,
+          text: textToDisplay
+        })
+      );
+
+      if (hasScreen === true && body.total_movie_votes > 0) {
+        conv.ask(
+          new BasicCard({
+            title: `You're rank ${body.movie_leaderboard_ranking} out of ${body.quantity_users} users!`,
+            text: `🗳 Keep ranking movies to improve your leaderboard position! Note that 30 days of inactivity will wipe your statistics!`,
+            /*buttons: new Button({
+              title: `🍿 Share user ranking`,
+              url: ``, // TODO: Auto-generate an image or web page for users to save a certificate of leaderboard ranking with their friends
+            }),
+            image: { // Mostly, you can provide just the raw API objects
+              url: `${movie_element.poster_url}`,
+              accessibilityText: `${movie_element.title}`,
+            },*/
+            display: 'WHITE'
+          })
+        );
+      }
+
+      if (hasScreen === true) {
+        conv.ask(
+          new Suggestions('🗳 Rank Movies', '🤔 Movie Recommendations', '📑 Help', '🚪 quit')
+        );
+      }
+
+    } else {
+      // Something wrong with the hug function..
+      return catch_error(conv, 'Unexpected error!', 'getLeaderBoards');
+    }
+
+  })
+  .catch(error_message => {
+    return catch_error(conv, error_message, 'training');
+  });
 }
 
 app.intent('recommendMovie', (conv)) = {
