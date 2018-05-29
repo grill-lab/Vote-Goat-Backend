@@ -27,13 +27,13 @@ function isIdValid (conv) {
   */
   const retrieved_user_id = lookup_user_id(conv);
 
-  if (input_string.length >= 80) {
+  if (retrieved_user_id.length >= 80) {
     return true;
   } else {
     if (screen_capabilities === false) {
       // This is a speaker!
       // We could check if speakers are the cause of 13 char long userId.
-      console.log(`isIdValid: UserID length < 80 (${input_string.length}) & audio-only device!`);
+      console.log(`isIdValid: UserID length < 80 (${retrieved_user_id.length}) & audio-only device!`);
     }
     return false;
   }
@@ -80,7 +80,7 @@ function parse_userId (conv) {
     This can help us track how frequently it changes, and to significantly reduce attempted userId registration attempts.
     User storage is wiped upon crash, so this is not a long term solution.
   */
-  const retrieved_id_storage = retrieved_id_storage; // TODO: Verify this storage works!
+  const retrieved_id_storage = conv.user.storage.useridstorage; // TODO: Verify this storage works!
   const user_gg_id = lookup_user_id(conv);
 
   if (isIdValid(conv) === true) {
@@ -89,9 +89,9 @@ function parse_userId (conv) {
       /*
         The UserId storage object exists, let's check its contents!
       */
-
       var temp_id_check = false; // Set before the loop
       var iteration_count = 0; // Keeping track of how many iterations were performed
+
       for (var iterator = 1; iterator <= retrieved_id_storage.length; iterator++) {
         // Loop over each
         iteration_count++;
@@ -102,6 +102,7 @@ function parse_userId (conv) {
           break;
         }
       }
+
       if (temp_id_check === true) {
         /*
           UserId is already present, return the id without performing registration
@@ -113,9 +114,10 @@ function parse_userId (conv) {
           Once registered, return the UserId.
         */
         register_userId(user_gg_id);
-        const
-        retrieved_id_storage[''] = user_gg_id;
-        return user_gg_id;
+        iteration_count++; // We want to target the next value!
+        const target_user_string = 'user_' + iteration_count.toString(); // 'user_#'
+        retrieved_id_storage[target_user_string] = user_gg_id; // Storing the newest UserId
+        return user_gg_id; // Use the latest!
       }
 
     } else {
