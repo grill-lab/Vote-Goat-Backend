@@ -27,7 +27,7 @@ function check_recent_activity (conv) {
       // The recent activity user stored value is present in the 'trigger_values' array
       // We will return the index in the array for easily selecting from one of 10 responses in the intent.
       const activity_index = trigger_values.indexOf(recent_activity);
-      const trigger_leaderboard_readout = [3, 5, 7, 9, 10];
+      const trigger_leaderboard_readout = [3, 10, 20, 35, 50];
 
       if (trigger_leaderboard_readout.includes(activity_index)) {
       /*
@@ -49,8 +49,8 @@ function check_recent_activity (conv) {
 
           possible_leaderboard_notifications = [
             `You've taken ${leaderboard_position} place in Vote Goat! Keep on voting!`;,
-            `Wow, you've voted ${total_user_votes} times, you know your movies!`,
-            `You've ranked ${total_user_votes} movies, keep it up!`
+            `Wow, you've voted ${total_user_votes} times, you sure know your movies!`,
+            `Incredible! You've ranked ${total_user_votes} movies, keep it up!`
           ]; // TODO: Add more notifications!
 
           notification_integer = Math.floor(Math.random() * 3); // Random number between 0 & 2
