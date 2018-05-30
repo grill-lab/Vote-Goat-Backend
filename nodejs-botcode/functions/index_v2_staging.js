@@ -197,11 +197,11 @@ function genericFallback(conv, intent_name, fallback_messages, suggestions) {
 
   console.log(util.inspect(conv, false, null));
 
-  //console.log(`Generic fallback count: ${conv.user.storage.fallbackCount}`);
+  //console.log(`Generic fallback count: ${conv.data.fallbackCount}`);
 
-  conv.user.storage.fallbackCount = parseInt(conv.user.storage.fallbackCount, 10); // Retrieve the value of the intent's fallback counter
+  conv.data.fallbackCount = parseInt(conv.data.fallbackCount, 10); // Retrieve the value of the intent's fallback counter
 
-  if (conv.user.storage.fallbackCount >= 3) {
+  if (conv.data.fallbackCount >= 3) {
     // Google best practice is to quit after 3 attempts
     console.log("User misunderstood 3 times, quitting!");
     chatbase_analytics(
@@ -214,12 +214,12 @@ function genericFallback(conv, intent_name, fallback_messages, suggestions) {
   } else {
     // Within fallback attempt limit (<3)
     console.log("HANDLED FALLBACK!");
-    const current_fallback_phrase = fallback_messages[conv.user.storage.fallbackCount];
-    conv.user.storage.fallbackCount++; // Iterate the fallback counter
+    const current_fallback_phrase = fallback_messages[conv.data.fallbackCount];
+    conv.data.fallbackCount++; // Iterate the fallback counter
     const fallback_speech = '<speak>' + current_fallback_phrase + '</speak>';
     const fallback_text = current_fallback_phrase;
 
-    //console.log(`${conv.user.storage.fallbackCount} ${fallback_name} ${fallback_messages} : ${current_fallback_phrase} : ${fallback_speech}`);
+    //console.log(`${conv.data.fallbackCount} ${fallback_name} ${fallback_messages} : ${current_fallback_phrase} : ${fallback_speech}`);
     chatbase_analytics(
       conv,
       'Sucessful fallback prompt', // input_message
@@ -260,10 +260,10 @@ app.intent('Welcome', conv => {
     const test = conv.contexts.get('Welcome', 'placeholder').value;
     console.log(`Context detection: ${test}`);
   } else {
-    conv.user.storage.fallbackCount = 0;
+    conv.data.fallbackCount = 0;
   }
   */
-  conv.user.storage.fallbackCount = 0;
+  conv.data.fallbackCount = 0;
 
   const welcome_param = {}; // The dict which will hold our parameter data
   welcome_param['placeholder'] = 'placeholder'; // We need this placeholder
@@ -588,7 +588,7 @@ app.intent('moreMovieInfo', (conv)) => {
     }
 
     console.log("moreMovieDetails Running!");
-    conv.user.storage.fallbackCount = 0; // Required for tracking fallback attempts! // Required for tracking fallback attempts!
+    conv.data.fallbackCount = 0; // Required for tracking fallback attempts! // Required for tracking fallback attempts!
     const hasScreen = conv.surface.capabilities.has('actions.capability.SCREEN_OUTPUT');
 
     const requested_mode = conv.contexts.get('vote_context', 'mode').value; // Retrieving the expected voting mode (within a list, or during training)!
@@ -823,7 +823,7 @@ app.intent('getGoat', (conv, { movieGenre }) => {
   Can't produce tables, could create a list/carousel but that'd take more time than remaining.
   Can't produce many outbound links.
   */
-  conv.user.storage.fallbackCount = 0; // Required for tracking fallback attempts! // For fallback handling
+  conv.data.fallbackCount = 0; // Required for tracking fallback attempts! // For fallback handling
 
   const movie_genres_string = parse_parameter_list(movieGenre, ' '); // parse movieGenre dialogflow parameter input
   const movie_genres_comma_separated_string = parse_parameter_list(movieGenre, ', '); // parse movieGenre dialogflow parameter input
@@ -1309,7 +1309,7 @@ app.intent('dislikeRecommendations', (conv)) = {
   /*
   Erasing the contexts then sending users to training mode!
   */
-  conv.user.storage.fallbackCount = 0; // Required for tracking fallback attempts!
+  conv.data.fallbackCount = 0; // Required for tracking fallback attempts!
 
   console.log("USER Disliked all recommendations!");
   if (conv.contexts.get('list_body', '0')) {
@@ -1424,7 +1424,7 @@ app.intent('itemSelected', (conv)) = {
     const param = app.getSelectedOption(); // Getting the clicked list item!
     var movie_element; // Where we'll store the JSON details of the clicked item!
 
-    conv.user.storage.fallbackCount = 0; // Required for tracking fallback attempts!
+    conv.data.fallbackCount = 0; // Required for tracking fallback attempts!
 
     if (!param) {
       // How did they manage this? Let's kick them out!
@@ -1572,7 +1572,7 @@ app.intent('input.unknown', conv => {
   Fallback used when the Google Assistant doesn't understand which intent the user wants to go to.
   */
   console.log("Unknown intent fallback triggered!");
-  //conv.user.storage.fallbackCount = 0;
+  //conv.data.fallbackCount = 0;
   const intent_fallback_messages = [
     "Sorry, what was that?",
     "I didn't catch that. What do you want to do in Vote Goat??",

@@ -79,6 +79,7 @@ function parse_userId (conv) {
     Purpose of this function is to temporarily store the user's userIds in the user's local storage.
     This can help us track how frequently it changes, and to significantly reduce attempted userId registration attempts.
     User storage is wiped upon crash, so this is not a long term solution.
+    https://developers.google.com/actions/identity/user-info
   */
   const retrieved_id_storage = conv.user.storage.useridstorage; // TODO: Verify this storage works!
   const user_gg_id = lookup_user_id(conv);
@@ -115,7 +116,7 @@ function parse_userId (conv) {
         */
         register_userId(user_gg_id);
         iteration_count++; // We want to target the next value!
-        const target_user_string = 'user_' + iteration_count.toString(); // 'user_#'
+        const target_user_string = 'user_' + iteration_count.toString(); // 'user_#' //TODO: Verify that this works, may need to split into 2 lines!
         retrieved_id_storage[target_user_string] = user_gg_id; // Storing the newest UserId
         return user_gg_id; // Use the latest!
       }
