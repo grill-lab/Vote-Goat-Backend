@@ -558,7 +558,7 @@ app.intent('Training', (conv, { movieGenre }) => {
   .catch(error_message => {
     return catch_error(conv, error_message, 'training');
   });
-})
+});
 
 app.intent('moreMovieInfo', (conv)) => {
   /*
@@ -1273,12 +1273,9 @@ app.intent('recommendMovie', (conv)) = {
 
               }
 
-              // UH-OH, Can't forwards the RichResponse nor carousel through contexts anymore!
-              // Perhaps unreachable code too?
               conv.contexts.set('recommend_movie_context', 1, {
                 "placeholder": "placeholder",
-                "repeatedRichResponse": RichResponse, // REMOVE ENTIRELY? NOT USED!
-                "repeatedCarousel": carousel // REPLACE WITH CAROUSEL INNER 'ITEM' OBJECT?
+                "repeatedCarousel": carousel_contents
               });
 
             } else {
@@ -1422,6 +1419,8 @@ app.intent('itemSelected', (conv)) = {
   if (conv.contexts.get('list_body', '0')) {
     console.log("INSIDE: itemSelected");
     const param = app.getSelectedOption(); // Getting the clicked list item!
+    // TODO: CHECK THE ABOVE IS V2!
+
     var movie_element; // Where we'll store the JSON details of the clicked item!
 
     conv.data.fallbackCount = 0; // Required for tracking fallback attempts!
