@@ -48,7 +48,7 @@ function check_recent_activity (conv) {
           const total_user_votes = body.total_movie_votes; // How many movies the user has ranked
 
           possible_leaderboard_notifications = [
-            `You've taken ${leaderboard_position} place in Vote Goat! Keep on voting!`;,
+            `You've taken ${leaderboard_position} place in Vote Goat! Keep on voting!`,
             `Wow, you've voted ${total_user_votes} times, you sure know your movies!`,
             `Incredible! You've ranked ${total_user_votes} movies, keep it up!`
           ]; // TODO: Add more notifications!

@@ -16,6 +16,8 @@
       "dontLoad": "",
       "load": "",
       "modules": ""
-    }
+    },
+    "node_resolve": {},
+    "es_modules": {}
   }
 }

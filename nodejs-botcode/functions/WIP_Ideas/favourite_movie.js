@@ -1,9 +1,10 @@
 app.intent('favourite_movie', (conv, { movieId }) => {
   /*
     Given an IMDB movie ID, display the movie & register interest in the movie!
+    TODO: Dump CSV of movieID:Movie_Titles for entity => enabling movieId input by user!
   */
   var parsed_movie_id;
-  if (typeof movieId !== 'undefined' && (input_dialogflow_parameter.length > 0)) {
+  if (typeof movieId !== 'undefined' && (movieId.length > 0)) {
     // The user provided a valid movie
     parsed_movie_id = movieId.toString();
   } else {
@@ -30,7 +31,7 @@ app.intent('favourite_movie', (conv, { movieId }) => {
         const hasScreen = conv.surface.capabilities.has('actions.capability.SCREEN_OUTPUT');
 
 
-        // INSERT CODE HERE!
+        // TODO: INSERT CODE HERE!
 
 
       } else {

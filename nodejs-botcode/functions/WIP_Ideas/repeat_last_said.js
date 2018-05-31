@@ -10,41 +10,6 @@ const REPEAT_PREFIX = [
 ];
 */
 
-function forward_contexts (conv, intent_name, inbound_context_name, outbound_context_name) {
-  /*
-    A function for easily forwarding the contents of contexts!
-    Why? Helper intents help direct conversations & need to forwards the user to the corrent intended intent after error handling!
-    Which intents? Voting, Repeat, Carousel? Several -> Keep it general!
-  */
-  const inbound_context = conv.contexts[inbound_context_name];
-
-  if (inbound_context) {
-    /*
-      The inbound context exists.
-      Let's forwards it on!
-    */
-    conv.contexts.set(outbound_context_name, 1, inbound_context);
-    console.log(`WELCOME CONTEXT PRESENT! ${conv.contexts.Welcome}`);
-  } else {
-    /*
-      We tried to forward the contents of a context which did not exist.
-    */
-    console.log(`ERROR: Failed to forwards the inbound context named "${inbound_context_name}"`);
-    conv.redirect.intent('handle_no_contexts'); // Redirect to 'handle_no_contexts' intent.
-  }
-}
-
-function repeat_response_store (conv, speech, text, intent_name, intent_context) {
-  /*
-    A function for easily storing the response data.
-    Takes in the speech, text, intent name & list of fallback strings.
-  */
-  conv.data.last_intent_prompt_speech = speech;
-  conv.data.last_intent_prompt_text = text;
-  conv.data.last_intent_name = intent_name;
-  conv.data.last_intent_context = intent_context;
-}
-
 app.intent('repeat', conv => {
   /*
     Google tips:
@@ -76,6 +41,7 @@ app.intent('repeat', conv => {
       })
     );
 
+    const hasScreen = conv.surface.capabilities.has('actions.capability.SCREEN_OUTPUT');
     if (intent_name === 'recommendMovie' && hasScreen){
       /*
 
@@ -91,4 +57,4 @@ app.intent('repeat', conv => {
     // No contexts were found
     conv.redirect.intent('handle_no_contexts'); // Redirect to 'handle_no_contexts' intent.
   }
-}
+});

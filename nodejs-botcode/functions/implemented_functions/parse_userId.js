@@ -30,7 +30,8 @@ function isIdValid (conv) {
   if (retrieved_user_id.length >= 80) {
     return true;
   } else {
-    if (screen_capabilities === false) {
+    const hasScreen = conv.surface.capabilities.has('actions.capability.SCREEN_OUTPUT');
+    if (hasScreen === false) {
       // This is a speaker!
       // We could check if speakers are the cause of 13 char long userId.
       console.log(`isIdValid: UserID length < 80 (${retrieved_user_id.length}) & audio-only device!`);
@@ -39,7 +40,7 @@ function isIdValid (conv) {
   }
 }
 
-function register_userId (user_id_string) {
+function register_userId (conv, user_id_string) {
   /*
     Registering an input UserId in MongoDB
     Doesn't return anything, it just does its' thing.
@@ -114,7 +115,7 @@ function parse_userId (conv) {
           The UserId is valid & was unseen in the above loo -> we need to register it.
           Once registered, return the UserId.
         */
-        register_userId(user_gg_id);
+        register_userId(conv, user_gg_id);
         iteration_count++; // We want to target the next value!
         const target_user_string = 'user_' + iteration_count.toString(); // 'user_#' //TODO: Verify that this works, may need to split into 2 lines!
         retrieved_id_storage[target_user_string] = user_gg_id; // Storing the newest UserId
@@ -126,7 +127,7 @@ function parse_userId (conv) {
         The UserId storage did not exist.
         Register user & store data locally!
       */
-      register_userId(user_gg_id);
+      register_userId(conv, user_gg_id);
       retrieved_id_storage.user_1 = user_gg_id;
       return user_gg_id; // Return the user's id
     }
@@ -160,7 +161,7 @@ function parse_userId (conv) {
         /*
           This occurrence of an unknown id, register it & store it in the local storage.
         */
-        register_userId(user_gg_id);
+        register_userId(conv, user_gg_id);
         retrieved_id_storage.unknown_1 = user_gg_id;
         return user_gg_id;
       }

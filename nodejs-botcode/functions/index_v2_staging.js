@@ -1,11 +1,14 @@
 'use strict'; // Mandatory js style?
 
-const { dialogflow, Suggestions, BasicCard, Button, SimpleResponse } = require('actions-on-google');
+// Requirements & Global vars:
 
-const util = require('util');
+const { dialogflow, Suggestions, BasicCard, Button, BrowseCarousel, SimpleResponse } = require('actions-on-google');
+const crypto = require('crypto');
 const functions = require('firebase-functions'); // Mandatory when using firebase
 const requestLib = require('request'); // Used for querying the HUG.REST API
-var chatbase = require('@google/chatbase')
+const util = require('util');
+
+let chatbase = require('@google/chatbase')
               .setApiKey('chatbase-api-key') // Your Chatbase API Key
               .setPlatform('Google Assistant'); // The type of message you are sending to chatbase: user (user) or agent (bot)
 
@@ -15,6 +18,8 @@ const hug_host = 'https://prod.domain.tld'; // THIS IS THE PRODUCTION SERVER! CH
 const app = dialogflow({
   debug: true
 }); // Creating the primary dialogflow app element
+
+////////////// Helper functions
 
 function catch_error(conv, error_message, intent) {
   /*
@@ -42,32 +47,51 @@ function catch_error(conv, error_message, intent) {
   );
 }
 
-function parse_parameter_list (input_dialogflow_parameter, separator) {
-  /*
-    Parse the input parameter data from dialogflow
-    Outputs a parsed array string ready for the HUG REST API GET request
-    Should work for any 'list' type parameter.
-  */
-  var parsed_array_string; // What we're going to return to the user
+function hug_request(target_url, target_function, method, qs_contents) {
+  // Setting URL and headers for request
 
-  if (typeof input_dialogflow_parameter !== 'undefined' && (input_dialogflow_parameter.length > 0) && Array.isArray(input_dialogflow_parameter)) { // Validating movie genre user input
-    // Genres are present in the user's input
-    if (separator === ', ' && input_dialogflow_parameter.length > 1) { // More than one genre? Engage!
-      // For displaying a comma separated string to the user
-      var editing_input_array = input_dialogflow_parameter;
-      const array_size = editing_input_array.length;
-      editing_input_array[array_size - 1] = 'and ' + editing_input_array[array_size - 1]; // We're setting the last actor array element to 'and <actor>'
-      parsed_array_string = (editing_input_array.join(', ')).replace(', and', ' and'); // Merge into a string, optimize gramar.
-    } else {
-      // For use in HUG REST query
-      parsed_array_string = input_dialogflow_parameter.join(separator); // Merge into a string for GET request
-    }
-  } else {
-    // The input_dialogflow_parameter parameter didn't pass validation
-    parsed_array_string = ' ';
+  let api_host = '';
+  if (target_url === 'HUG') {
+    // Change this to your own HUG REST API server (if you want)
+    api_host = `https://prod.domain.tld`;
+  } else if (target_url === 'NN') {
+    // Change this to the ML model URL
+    api_host = `https://nn.domain.tld`;
   }
 
-  return parsed_array_string; // Onwards to the HUG GET request!
+  let request_options = {
+    url: `${api_host}/${target_function}`,
+    method: method, // GET request, not POST.
+    json: true,
+    headers: {
+      'User-Agent': 'Vote Goat Bot',
+      'Content-Type': 'application/json'
+    },
+    qs: qs_contents
+  };
+
+  // Return new promise
+  return new Promise((resolve, reject) => {
+    // Do async job
+    requestLib(request_options, (err, resp, body) => {
+        if (err) {
+          // Returning an indication that the HUG REST query failed
+          const error_message = err;
+          console.log(`Error - we didn't get a proper response! URL: ${api_host}/${target_function}`);
+          reject(error_message);
+        } else {
+          if (resp.statusCode === 200) {
+            // Returning the body in a promise
+            resolve(body);
+          } else {
+            // Don't want anything other than 200
+            const error_message = resp;
+            console.log("No error, but response != 200");
+            reject(error_message);
+          }
+        }
+    })
+  });
 }
 
 function chatbase_analytics(conv, input_message, input_intent, win_or_fail) {
@@ -75,8 +99,8 @@ function chatbase_analytics(conv, input_message, input_intent, win_or_fail) {
   Integrating chatbase chat bot analytics.
   Will help optimize user experience whilst minimizing privacy impact.
   */
-  var lookup_user_id = conv.user.id;
-  var userId;
+  let lookup_user_id = conv.user.id;
+  let userId;
 
   if (typeof lookup_user_id !== 'undefined' && lookup_user_id) {
     userId = lookup_user_id.toString();
@@ -117,53 +141,242 @@ function chatbase_analytics(conv, input_message, input_intent, win_or_fail) {
   }
 }
 
-function hug_request(target_url, target_function, method, qs_contents) {
-  // Setting URL and headers for request
+function forward_contexts (conv, intent_name, inbound_context_name, outbound_context_name) {
+  /*
+    A function for easily forwarding the contents of contexts!
+    Why? Helper intents help direct conversations & need to forwards the user to the corrent intended intent after error handling!
+    Which intents? Voting, Repeat, Carousel? Several -> Keep it general!
+  */
+  const inbound_context = conv.contexts[inbound_context_name];
 
-  var api_host = '';
-  if (target_url === 'HUG') {
-    // Change this to your own HUG REST API server (if you want)
-    api_host = `https://prod.domain.tld`;
-  } else if (target_url === 'NN') {
-    // Change this to the ML model URL
-    api_host = `https://nn.domain.tld`;
+  if (inbound_context) {
+    /*
+      The inbound context exists.
+      Let's forwards it on!
+    */
+    conv.contexts.set(outbound_context_name, 1, inbound_context);
+    console.log(`WELCOME CONTEXT PRESENT! ${conv.contexts.Welcome}`);
   } else {
-    return NONE; // This alright? Shouldn't ever trigger..
+    /*
+      We tried to forward the contents of a context which did not exist.
+    */
+    console.log(`ERROR: Failed to forwards the inbound context named "${inbound_context_name}"`);
+    conv.redirect.intent('handle_no_contexts'); // Redirect to 'handle_no_contexts' intent.
   }
+}
 
-  var request_options = {
-    url: `${api_host}/${target_function}`,
-    method: method, // GET request, not POST.
-    json: true,
-    headers: {
-      'User-Agent': 'Vote Goat Bot',
-      'Content-Type': 'application/json'
-    },
-    qs: qs_contents
+function repeat_response_store (conv, speech, text, intent_name, intent_context) {
+  /*
+    A function for easily storing the response data.
+    Takes in the speech, text, intent name & list of fallback strings.
+  */
+  conv.data.last_intent_prompt_speech = speech;
+  conv.data.last_intent_prompt_text = text;
+  conv.data.last_intent_name = intent_name;
+  conv.data.last_intent_context = intent_context;
+}
+
+////////////// UserId related:
+
+function lookup_user_id (conv) {
+  /*
+    Function to retrieve user Id cleanly.
+    Overly elaborate, could be simplified.
+  */
+  const retrieved_user_id = conv.user.id;
+
+  if (typeof retrieved_user_id !== 'undefined' && retrieved_user_id) {
+    /*
+      This should always trigger, unless an issue occurs with the Google Assistant itself..
+    */
+    return retrieved_user_id.toString();
+  } else {
+    /*
+      Should never occur!
+      Perhaps throw an error?
+    */
+    return 'INVALID';
+  }
+}
+
+function isIdValid (conv) {
+  /*
+    The vast majority of userIds logged had length 86-87 characters
+    Approx 10% of userIds logged had length of 13 characters.
+    We're assuming that >= 80 is valid, however since this is a random identifier this check may need to change in the future!
+  */
+  const retrieved_user_id = lookup_user_id(conv);
+
+  if (retrieved_user_id.length >= 80) {
+    return true;
+  } else {
+    const hasScreen = conv.surface.capabilities.has('actions.capability.SCREEN_OUTPUT');
+    if (hasScreen === false) {
+      // This is a speaker!
+      // We could check if speakers are the cause of 13 char long userId.
+      console.log(`isIdValid: UserID length < 80 (${retrieved_user_id.length}) & audio-only device!`);
+    }
+    return false;
+  }
+}
+
+function register_userId (conv, user_id_string) {
+  /*
+    Registering an input UserId in MongoDB
+    Doesn't return anything, it just does its' thing.
+  */
+  const qs_input = {
+    //  HUG REST GET request parameters
+    gg_id: user_id_string, // Anon Google ID from above
+    user_name: 'none_supplied', // TODO: REMOVE THIS LINE - Needs a change in both HUG and MongoDB.
+    api_key: 'API_KEY'
   };
 
-  // Return new promise
-  return new Promise((resolve, reject) => {
-    // Do async job
-    requestLib(request_options, (err, resp, body) => {
-        if (err) {
-          // Returning an indication that the HUG REST query failed
-          const error_message = err;
-          console.log(`Error - we didn't get a proper response! URL: ${api_host}/${target_function}`);
-          reject(error_message);
-        } else {
-          if (resp.statusCode === 200) {
-            // Returning the body in a promise
-            resolve(body);
-          } else {
-            // Don't want anything other than 200
-            const error_message = resp;
-            console.log("No error, but response != 200");
-            reject(error_message);
-          }
-        }
-    })
+  return hug_request('HUG', 'create_user', 'GET', qs_input)
+  .then(body => {
+    const user_existed = body.user_existed;
+    const created_user = body.created_user;
+
+    if (user_existed == false && created_user == true) {
+      /*
+        UserId successfully registered on MongoDB
+      */
+      console.log("Account created!");
+    } else if (user_existed == true && created_user == false) {
+      /*
+        The UserId was unseen on the mobile device, but already registered on MongoDB.
+        Possible that the user wiped their user storage whilst maintaining their UserId.
+      */
+      console.log("Account already existed!");
+    }
+  })
+  .catch(error_message => {
+    return catch_error(conv, error_message, 'user_registration');
   });
+}
+
+function parse_userId (conv) {
+  /*
+    Purpose of this function is to temporarily store the user's userIds in the user's local storage.
+    This can help us track how frequently it changes, and to significantly reduce attempted userId registration attempts.
+    User storage is wiped upon crash, so this is not a long term solution.
+    https://developers.google.com/actions/identity/user-info
+  */
+  const retrieved_id_storage = conv.user.storage.useridstorage; // TODO: Verify this storage works!
+  const user_gg_id = lookup_user_id(conv);
+
+  if (isIdValid(conv) === true) {
+
+    if (typeof retrieved_id_storage !== 'undefined' && retrieved_id_storage) {
+      /*
+        The UserId storage object exists, let's check its contents!
+      */
+      var temp_id_check = false; // Set before the loop
+      var iteration_count = 0; // Keeping track of how many iterations were performed
+
+      for (var iterator = 1; iterator <= retrieved_id_storage.length; iterator++) {
+        // Loop over each
+        iteration_count++;
+        const iterator_string = iterator.toString();
+        if (retrieved_id_storage['user_' + iterator_string] === user_gg_id) {
+          // The UserId was previously stored in user storage
+          temp_id_check = true;
+          break;
+        }
+      }
+
+      if (temp_id_check === true) {
+        /*
+          UserId is already present, return the id without performing registration
+        */
+        return user_gg_id;
+      } else {
+        /*
+          The UserId is valid & was unseen in the above loo -> we need to register it.
+          Once registered, return the UserId.
+        */
+        register_userId(conv, user_gg_id);
+        iteration_count++; // We want to target the next value!
+        const target_user_string = 'user_' + iteration_count.toString(); // 'user_#' //TODO: Verify that this works, may need to split into 2 lines!
+        retrieved_id_storage[target_user_string] = user_gg_id; // Storing the newest UserId
+        return user_gg_id; // Use the latest!
+      }
+
+    } else {
+      /*
+        The UserId storage did not exist.
+        Register user & store data locally!
+      */
+      register_userId(conv, user_gg_id);
+      retrieved_id_storage.user_1 = user_gg_id;
+      return user_gg_id; // Return the user's id
+    }
+  } else {
+    /*
+      UserId is INVALID! (Q: The anon UserId is random, so too its length?)
+      ---
+      Checking the local user storage for the existence of a past valid UserId!
+      If present, we'll use it - enabling guests to use our bot yet still contribute towards the host's leaderboard rankings.
+    */
+    if (typeof retrieved_id_storage.user_1 !== 'undefined' && retrieved_id_storage.user_1) {
+      /*
+        The user_1 object exists, let's return it!
+        TODO: Must verify whether or not local user storage can be manipulated by the user!
+      */
+      return retrieved_id_storage.user_1;
+    } else {
+      /*
+        The user has an invalid UserId & they also do not have a previously stored UserId!
+        What do we do with them?
+        TODO: Figure out how to respond to this type of user? Kick them out? Just return the invalid Id & let them carry on as usual? hmm..
+        TODO: Prompt for more permissions? Can we re-prompt their personalization setting selection?
+      */
+      if (typeof retrieved_id_storage.unknown_1 !== 'undefined' && retrieved_id_storage.unknown_1) {
+        /*
+          A past unknown id was already registered, let's return that instead!
+          TODO: Compare current unknown UserId & the stored unknown UserId for greater validity?
+        */
+        return retrieved_id_storage.unknown_1;
+      } else {
+        /*
+          This occurrence of an unknown id, register it & store it in the local storage.
+        */
+        register_userId(conv, user_gg_id);
+        retrieved_id_storage.unknown_1 = user_gg_id;
+        return user_gg_id;
+      }
+    }
+  }
+}
+
+//////////////  Parameter related functions:
+
+function parse_parameter_list (input_dialogflow_parameter, separator) {
+  /*
+    Parse the input parameter data from dialogflow
+    Outputs a parsed array string ready for the HUG REST API GET request
+    Should work for any 'list' type parameter.
+  */
+  var parsed_array_string; // What we're going to return to the user
+
+  if (typeof input_dialogflow_parameter !== 'undefined' && (input_dialogflow_parameter.length > 0) && Array.isArray(input_dialogflow_parameter)) { // Validating movie genre user input
+    // Genres are present in the user's input
+    if (separator === ', ' && input_dialogflow_parameter.length > 1) { // More than one genre? Engage!
+      // For displaying a comma separated string to the user
+      var editing_input_array = input_dialogflow_parameter;
+      const array_size = editing_input_array.length;
+      editing_input_array[array_size - 1] = 'and ' + editing_input_array[array_size - 1]; // We're setting the last actor array element to 'and <actor>'
+      parsed_array_string = (editing_input_array.join(', ')).replace(', and', ' and'); // Merge into a string, optimize gramar.
+    } else {
+      // For use in HUG REST query
+      parsed_array_string = input_dialogflow_parameter.join(separator); // Merge into a string for GET request
+    }
+  } else {
+    // The input_dialogflow_parameter parameter didn't pass validation
+    parsed_array_string = ' ';
+  }
+
+  return parsed_array_string; // Onwards to the HUG GET request!
 }
 
 function helpExtract(input_array) {
@@ -240,6 +453,8 @@ function genericFallback(conv, intent_name, fallback_messages, suggestions) {
     }
   }
 }
+
+////////////// Google Assistant Intents:
 
 app.intent('Welcome', conv => {
   /*
@@ -328,7 +543,7 @@ app.intent('Training', (conv, { movieGenre }) => {
   parameter['placeholder'] = 'placeholder'; // We need this placeholder
   conv.contexts.set('template', 1, parameter); // Need to set the data
 
-  var movie_genres_string;
+  let movie_genres_string;
 
   if (typeof movieGenre !== 'undefined' && (movieGenre.length > 0)) {
 
@@ -364,7 +579,7 @@ app.intent('Training', (conv, { movieGenre }) => {
       We're maintaining the genres the user input.
       This context will be active if the user came from 'plot spoilers'.
       */
-      var past_movie_genres_more = conv.contexts.get('forward_genre_more', 'movieGenres').value;
+      let past_movie_genres_more = conv.contexts.get('forward_genre_more', 'movieGenres').value;
       //console.log(`TEST: FORWARD_GENRE_MORE EXISTS! ${past_movie_genres_more}`);
       conv.contexts.set('forward_genre', 1, { // We're now looping the last input genre until the user provides a new set of parameters
         "placeholder": "placeholder",
@@ -376,7 +591,7 @@ app.intent('Training', (conv, { movieGenre }) => {
       We're maintaining the genres the user input.
       This context will be active if the user voted without clicking 'plot spoilers'.
       */
-      var past_movie_genres = conv.contexts.get('forward_genre', 'movieGenres').value;
+      let past_movie_genres = conv.contexts.get('forward_genre', 'movieGenres').value;
       //console.log(`TEST: FORWARD_GENRE EXISTS! ${past_movie_genres}`);
       conv.contexts.set('forward_genre', 1, { // We're now looping the last input genre until the user provides a new set of parameters
         "placeholder": "placeholder",
@@ -655,7 +870,7 @@ app.intent('voted', (conv, { voting }) => {
 
     //console.log(`CHECK VOTES: ${voting}, IS IT AN ARRAY? ${Array.isArray(voting)}, LENGTH: ${voting.length}`);
 
-    var voting_intention = 1; // Default is upvote! This could be simplified to 'var voting_intention;' perhaps.
+    let voting_intention = 1; // Default is upvote! This could be simplified to 'let voting_intention;' perhaps.
 
     if (Array.isArray(voting)) { // Verifying that voting is an array
       /*
@@ -671,7 +886,7 @@ app.intent('voted', (conv, { voting }) => {
         let downvotes = 0; // Quantity of downvotes in the voting list
 
         // Let's count the occurrences of upvote & downvote in the voting_array
-        for (var index = 0; index < quantity_votes; index++) {
+        for (let index = 0; index < quantity_votes; index++) {
           if (voting[index] === 'upvote') {
             upvotes++; // increment!
           } else if (voting[index] === 'downvote') {
@@ -733,8 +948,8 @@ app.intent('voted', (conv, { voting }) => {
           User voted from within the movie recommendation section.
           We want to provide them an appropriate response & prompt them for the next step.
           */
-          var textToSpeech;
-          var speechToText;
+          let textToSpeech;
+          let speechToText;
 
           // TODO: Make the following less verbose? Perhaps based on recent usage levels.
 
@@ -826,14 +1041,13 @@ app.intent('getGoat', (conv, { movieGenre }) => {
     if (body.length > 1) {
       if (body[0].success === true && body[0].valid_key === true) {
         // We've got movies to display!
-        var movie_title_length_limit;
-        var genre_title = ``;
-        var goat_text = ``;
-        var textToSpeech = ``;
-        var goat_voice = ``;
-        var textToSpeech = ``;
-        var textToDisplay = ``;
-        var quantity_results;
+        let movie_title_length_limit;
+        let goat_text = ``;
+        let textToSpeech = ``;
+        let speechToText = ``;
+        let goat_voice = ``;
+        let textToDisplay = ``;
+        let quantity_results;
 
         if (hasScreen === true) {
           quantity_results = 10;
@@ -858,21 +1072,21 @@ app.intent('getGoat', (conv, { movieGenre }) => {
         const hasScreen = conv.surface.capabilities.has('actions.capability.SCREEN_OUTPUT');
         if (hasScreen === true) {
           // TODO: Make use of table cards to display this information once it's no longer in developer preview
-          var sum_movie_title_lengths; // Var to hold summed length of movie titles
-          for (var index = 0; index < body.length; index++) {
+          let sum_movie_title_lengths; // let to hold summed length of movie titles
+          for (let index = 0; index < body.length; index++) {
             /*
               Iterate over movies in GOAT list to check max length of movie titles
             */
             sum_movie_title_lengths += body[index].title;
           }
 
-            for (var index = 0; index < body.length; index++) {
+            for (let index = 0; index < body.length; index++) {
               // Iterate over movies in GOAT list
               let current_rank = index + 1; // Movie's ranking in GOAT list
-              var movie_title; // Will populate with value in if statement
+              let movie_title; // Will populate with value in if statement
 
               if (sum_movie_title_lengths > movie_title_length_limit) {
-                let temp_title = body[index].title; // Temporary var for holding title text
+                let temp_title = body[index].title; // Temporary let for holding title text
                 movie_title = temp_title.substring(0, movie_title_length_limit); // Reducing the length of the movie title
               } else {
                 movie_title = body[index].title; // non-limited movie title
@@ -883,7 +1097,7 @@ app.intent('getGoat', (conv, { movieGenre }) => {
               } else {
                 goat_text += `${current_rank}: "${movie_title}" (${body[index].year})`;
               }
-              goat_voice += `${limited_title}<break time="0.3s" />`;
+              goat_voice += `${movie_title}<break time="0.3s" />`;
             }
 
 
@@ -979,8 +1193,8 @@ app.intent('getGoat', (conv, { movieGenre }) => {
         We've not got movies to display!
         Perhaps this is because the user has entered too many movie genres?
       */
-      var textToSpeech;
-      var speechToText;
+      let textToSpeech;
+      let speechToText;
 
       if (movie_genres_parameter_data.length > 0) {
         textToSpeech = `<speak>` +
@@ -1046,8 +1260,8 @@ app.intent('getLeaderboard', conv => {
 
     if (body.success === true && body.valid_key === true) {
 
-      var textToSpeech;
-      var displayText;
+      let textToSpeech;
+      let displayText;
 
       if (body.total_movie_votes > 0) {
         textToSpeech = `<speak>` +
@@ -1121,23 +1335,23 @@ app.intent('recommendMovie', (conv) => {
     * Replace random movies with computed model movie recommendations.
   */
 
-  const ab_vars = {
+  const ab_lets = {
     //  HUG REST GET request parameters
     gg_id: userId, // Anonymous google id
     api_key: 'API_KEY'
   };
 
-  return hug_request('HUG', 'get_ab_value', 'GET', ab_vars)
+  return hug_request('HUG', 'get_ab_value', 'GET', ab_lets)
   .then(ab_body => {
     if (ab_body.success === true) {
-      var ab_value = ab_body.ab_value // Either 0 or 1
+      let ab_value = ab_body.ab_value // Either 0 or 1
       const ab_recommendation_options = {
         //  HUG REST GET request parameters
         gg_id: userId, // Anonymous google id
         api_key: 'API_KEY'
       };
 
-      var target_recommendation_function;
+      let target_recommendation_function;
       if (ab_value === 1) {
         // This is how we implement basic AB testing.
         // The user gets either a 0 or 1 from HUG, which determines the model.
@@ -1158,10 +1372,10 @@ app.intent('recommendMovie', (conv) => {
           if (quantity_top_k > 0) {
 
             let movie_list = []; // Where we'll store the list elements
-            var parameters = {}; // Creating parameter holder
-            var carousel_items = {} // Creating carousel item holder
+            let parameters = {}; // Creating parameter holder
+            let carousel_items = {} // Creating carousel item holder
 
-            for (var iterator = 0; iterator < quantity_top_k; iterator++) { // Iterating over the top k rec_body results!
+            for (let iterator = 0; iterator < quantity_top_k; iterator++) { // Iterating over the top k rec_body results!
               /*
               Given the quantity of movies returned in the JSON (eventually top-k movies),
               produce the 'buildOptionItem' element and store it in the 'movie_list' list.
@@ -1283,7 +1497,7 @@ app.intent('dislikeRecommendations', (conv) => {
 
   console.log("USER Disliked all recommendations!");
   if (conv.contexts.get('list_body', '0')) {
-    var iterator_max;
+    let iterator_max;
     const hasScreen = conv.surface.capabilities.has('actions.capability.SCREEN_OUTPUT');
 
     if (hasScreen === true) {
@@ -1294,7 +1508,7 @@ app.intent('dislikeRecommendations', (conv) => {
       iterator_max = 2;
     }
 
-    for (var iterator = 0; iterator < 10; iterator++) { // Iterating over the top k body results!
+    for (let iterator = 0; iterator < 10; iterator++) { // Iterating over the top k body results!
 
       if (iterator > iterator_max) {
         break; // Greater than 9 is invalid.
@@ -1330,8 +1544,8 @@ app.intent('dislikeRecommendations', (conv) => {
       }
     } // End of loop
 
-    var textToSpeech;
-    var speechToText;
+    let textToSpeech;
+    let speechToText;
 
     if (hasScreen === true) {
       // Device has a screen
@@ -1394,7 +1608,7 @@ app.intent('itemSelected', (conv, input, option) => {
   */
   if (conv.contexts.get('list_body', '0')) {
     //console.log("INSIDE: itemSelected");
-    var movie_element; // Where we'll store the JSON details of the clicked item!
+    let movie_element; // Where we'll store the JSON details of the clicked item!
 
     conv.data.fallbackCount = 0; // Required for tracking fallback attempts!
     const possible_parameters = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9'];
@@ -1472,8 +1686,8 @@ app.intent('itemSelected', (conv, input, option) => {
       "placeholder": "placeholder"
     });
 
-    var title_var = (movie_element.title).replace('&', 'and'); // & characters invalidate SSML
-    //var plot_var = (movie_element.plot).replace('&', 'and'); // & characters invalidate SSML
+    let title_let = (movie_element.title).replace('&', 'and'); // & characters invalidate SSML
+    //let plot_let = (movie_element.plot).replace('&', 'and'); // & characters invalidate SSML
 
     conv.contexts.get('vote_context', 1, { // Setting the mode for upvote/downvote to detect where we are!
       "mode": 'list_selection', // Setting the mode for upvote/downvote to detect where we are!
@@ -1488,17 +1702,17 @@ app.intent('itemSelected', (conv, input, option) => {
     const director_list = helpExtract(movie_element.director);
 
     const textToSpeech1 = `<speak>` +
-      `"${title_var}" is a ${genre_list} movie, with a cast primarily comprised of ${actor_list}. <break time="0.35s" />` +
+      `"${title_let}" is a ${genre_list} movie, with a cast primarily comprised of ${actor_list}. <break time="0.35s" />` +
       `It was released in ${movie_element.year}, directed by ${director_list} and has an IMDB rating of ${movie_element.imdbRating} out of 10. <break time="0.35s" /> ` +
-      `Are you interested in watching "${title_var}"?` +
+      `Are you interested in watching "${title_let}"?` +
       `</speak>`;
 
-    const textToDisplay1 = `Title: ${title_var}\n` +
-    `Genre: ${title_var}\n` +
-    `Director: ${title_var}\n` +
-    `IMDB Rating: ${title_var}\n` +
-    `Title: ${title_var}\n` +
-    `Title: ${title_var}`;
+    const textToDisplay1 = `Title: ${title_let}\n` +
+    `Genre: ${title_let}\n` +
+    `Director: ${title_let}\n` +
+    `IMDB Rating: ${title_let}\n` +
+    `Title: ${title_let}\n` +
+    `Title: ${title_let}`;
 
     conv.ask(
       new SimpleResponse({
@@ -1549,6 +1763,131 @@ app.intent('input.unknown', conv => {
   const suggestions = ['🗳 Rank Movies', '🤔 Movie Recommendation', '🏆 Show Stats', `🐐 GOAT Movies`, '📑 Help', `🚪 Quit`]
 
   return genericFallback(conv, `bot.fallback`, intent_fallback_messages, suggestions);
+});
+
+app.intent('listFallback', (conv) => {
+  /*
+  Fallback function for the voting mechanisms!
+  Change the CAROUSEL_FALLBACK contents if you want different responses.
+  */
+  console.log("RECOMMEND FALLBACK TRIGGERED!");
+  const recommendation_context = conv.contexts.get('recommend_movie_context');
+  const list_body = conv.contexts.get('list_body');
+
+  if (recommendation_context['placeholder'] && list_body['0']) {
+    let carousel = recommendation_context['repeatedCarousel'].value;
+
+    let first_movie = list_body['0'].value; // Grabbing the first movie_element
+    let second_movie = list_body['1'].value; // Grabbing the second movie_element
+    let third_movie = list_body['2'].value; // Grabbing the third movie_element
+
+    var CAROUSEL_FALLBACK_DATA;
+
+    const hasScreen = conv.surface.capabilities.has('actions.capability.SCREEN_OUTPUT');
+    if (hasScreen === true) {
+      CAROUSEL_FALLBACK_DATA = [
+        "Sorry, which film was that?",
+        "I didn't catch that. Could you repeat your movie selection?",
+        "I'm having difficulties understanding your movie selection. Which movie from the list are you most interested in watching?"
+      ];
+    } else {
+      // We need to remind users without screens what the movies were!
+      CAROUSEL_FALLBACK_DATA = [
+        "Sorry, which film was that?",
+        `I didn't catch that. Could you repeat your movie selection?`,
+        `I'm having difficulties understanding. The movies were ${first_movie.title}, ${second_movie.title} and ${third_movie.title}. Interested in any of them?`
+      ];
+    }
+
+    const current_fallback_value = parseInt(conv.data.fallbackCount, 10); // Retrieve the value of the intent's fallback counter
+    conv.data.fallbackCount++; // Iterate the fallback counter
+
+    if (current_fallback_value > 3) {
+      // The user failed too many times
+      conv.close("Unfortunately, Vote Goat was unable to understand user input. Sorry for the inconvenience, let's try again later though? Goodbye.");
+    } else {
+      /*
+        Displaying carousel fallback & forwarding contexts in case of subsequent carousel fallbacks
+      */
+      forward_contexts(conv, 'carousel_fallback', 'recommendation_context', 'recommendation_context');
+      forward_contexts(conv, 'carousel_fallback', 'list_body', 'list_body');
+
+      conv.ask(
+        new SimpleResponse({
+          speech: `<speak>${CAROUSEL_FALLBACK_DATA[current_fallback_value]}</speak>`,
+          text: CAROUSEL_FALLBACK_DATA[current_fallback_value]
+        }),
+        new BrowseCarousel({
+          items: carousel
+        })
+      );
+      if (conv.surface.capabilities.has('actions.capability.SCREEN_OUTPUT')) {
+        conv.ask(
+          new Suggestions('🗳 Rank Movies', '🏆 Show Stats', '📑 Help', `🚪 Back`)
+        );
+      }
+    }
+  } else {
+    /*
+      Somehow the user triggered the carousel fallback without having the carousel contexts.
+     Shouldn't occur, but better safe than sorry!
+    */
+    conv.redirect.intent('handle_no_contexts'); // Redirect to 'handle_no_contexts' intent.
+  }
+});
+
+app.intent('handle_no_contexts', conv => {
+  /*
+  Any ghost contexts shall never haunt us again!
+  We shall catch cases where the user got to an intent when they shouldn't have.
+  Shouldn't be neccessary with correct dialogflow input contexts... :(
+  */
+  conv.user.storage.fallbackCount = 0; // Required for tracking fallback attempts!
+
+  const intent_fallback_messages = [
+    "Sorry, what do you want to do next?",
+    "I didn't catch that. Do you want to rank movies, receive movie recommendations, view your leaderboard position or discover the GOAT movies?",
+    "I'm having difficulties understanding what you want to do with Vote Goat. Do you want to rank movies, receive personalized movie recommendations, view your Vote Goat leaderboard position or discover the greatest movies of all time?"
+  ];
+
+  const textToSpeech = `<speak>` +
+    `Sorry, you've taken the wrong turn. <break time="0.5s" /> ` +
+    `What would you like to do instead? <break time="0.25s" /> ` +
+    `Rank Movies? <break time="0.25s" /> ` +
+    `Get a Movie Recommendation? <break time="0.25s" /> ` +
+    `View your stats? <break time="0.25s" /> ` +
+    `View the Greated movies of all time? <break time="0.25s" /> ` +
+    `Or do you need help? <break time="0.25s" /> ` +
+    `</speak>`;
+
+  const textToDisplay = `Sorry, you've taken the wrong turn.! \n\n ` +
+               `What would you like to do instead? \n\n ` +
+               `🗳 Rank Movies? \n\n ` +
+               `🤔 Get a Movie Recommendation? \n\n ` +
+               `🏆 View your stats? \n\n ` +
+               `🐐 View GOAT movies? \n\n ` +
+               `📑 Or do you need help?`;
+
+  conv.ask(
+    new SimpleResponse({
+      speech: textToSpeech,
+      text: textToDisplay
+    })
+  );
+
+  const hasScreen = conv.surface.capabilities.has('actions.capability.SCREEN_OUTPUT');
+
+  if (hasScreen === true) {
+    conv.ask(
+      new Suggestions('🗳 Rank Movies', '🤔 Movie Recommendation', '🏆 Show Stats', `🐐 GOAT Movies`, '📑 Help', `🚪 Quit`)
+    );
+  }
+
+  /*
+  app.setContext('handle_no_contexts', 1, {
+    "placeholder": "placeholder"
+  });
+  */
 });
 
 app.intent('getHelpAnywhere', conv => {

@@ -1,47 +1,3 @@
-const crypto = require('crypto');
-
-function lookup_user_id (conv) {
-  /*
-    Function to retrieve user Id cleanly.
-    Overly elaborate, could be simplified.
-  */
-  const retrieved_user_id = conv.user.id;
-
-  if (typeof retrieved_user_id !== 'undefined' && retrieved_user_id) {
-    /*
-      This should always trigger, unless an issue occurs with the Google Assistant itself..
-    */
-    return retrieved_user_id.toString();
-  } else {
-    /*
-      Should never occur!
-      Perhaps throw an error?
-    */
-    return 'INVALID';
-  }
-}
-
-function isIdValid (conv) {
-  /*
-    The vast majority of userIds logged had length 86-87 characters
-    Approx 10% of userIds logged had length of 13 characters.
-    We're assuming that >= 80 is valid, however since this is a random identifier this check may need to change in the future!
-  */
-  const retrieved_user_id = lookup_user_id(conv);
-
-  if (input_string.length >= 80) {
-    return true;
-  } else {
-    if (screen_capabilities === false) {
-      // This is a speaker!
-      // We could check if speakers are the cause of 13 char long userId.
-      console.log(`isIdValid: UserID length < 80 (${input_string.length}) & audio-only device!`);
-    }
-    return false;
-  }
-}
-
-
 app.intent('userIDProof', conv => {
   /*
     Providing the user a proof of userID ownership by signing the userID with our openssl private key.
@@ -55,11 +11,6 @@ app.intent('userIDProof', conv => {
 
   var textToSpeech;
   var textToDisplay;
-
-  /*
-  var signedUserIDSpeech;
-  var signedUserIDText;
-  */
   var hashed_userID;
   var signed_userID;
 
@@ -92,12 +43,6 @@ app.intent('userIDProof', conv => {
 
     textToDisplay = `I've successfully created your proof of UserID ownership!` +
     `Please copy and paste the following codes, keep them somewhere safe!`;
-    /*
-      // Why not via text? User can't copy/paste directly from the assistant.
-    signedUserIDSpeech = ` `; // Pushing text without any speech!
-    signedUserIDText = `ID: ${hash} \n\n` + // This may not work?
-                       `Proof: ${signed_userID}`;
-    */
 
     chatbase_analytics(
       conv,
@@ -105,7 +50,7 @@ app.intent('userIDProof', conv => {
       'userIDProof', // input_intent
       'Win' // win_or_fail
     );
-  } else if {hasScreen === false && userIDCheck === 'valid'} {
+  } else if (hasScreen === false && userIDCheck === 'valid') {
     textToSpeech = `<speak>` +
       `Sorry, you require a screen to access this functionality.` +
       `What would you like to do next?` +
@@ -151,15 +96,11 @@ app.intent('userIDProof', conv => {
   );
 
   if (showSignature === true) {
-    // Displaying the signature to the user
-    // There's no copy/paste functionality, so we're sending them to about:blank to share the data via the URL!
+    /*
+     Displaying the signature to the user
+     There's no copy/paste functionality, so we're sending them to about:blank to share the data via the URL!
+    */
     conv.close(
-      /*
-      new SimpleResponse({
-        speech: signedUserIDSpeech,
-        text: signedUserIDText
-      })
-      */
       new BasicCard({
         title: `Success - Proof generated!`,
         text: `Clicking the button will launch a blank web page, copy the contents of the URL and store it safely for future use.`,

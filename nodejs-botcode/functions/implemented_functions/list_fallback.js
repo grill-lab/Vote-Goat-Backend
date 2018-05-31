@@ -1,4 +1,4 @@
-function listFallback(app) {
+app.intent('listFallback', (conv) => {
   /*
   Fallback function for the voting mechanisms!
   Change the CAROUSEL_FALLBACK contents if you want different responses.
@@ -15,6 +15,8 @@ function listFallback(app) {
     let third_movie = list_body['2'].value; // Grabbing the third movie_element
 
     var CAROUSEL_FALLBACK_DATA;
+
+    const hasScreen = conv.surface.capabilities.has('actions.capability.SCREEN_OUTPUT');
     if (hasScreen === true) {
       CAROUSEL_FALLBACK_DATA = [
         "Sorry, which film was that?",
@@ -29,7 +31,6 @@ function listFallback(app) {
         `I'm having difficulties understanding. The movies were ${first_movie.title}, ${second_movie.title} and ${third_movie.title}. Interested in any of them?`
       ];
     }
-    let current_fallback_phrase = CAROUSEL_FALLBACK_DATA[conv.data.fallbackCount];
 
     const current_fallback_value = parseInt(conv.data.fallbackCount, 10); // Retrieve the value of the intent's fallback counter
     conv.data.fallbackCount++; // Iterate the fallback counter
@@ -46,11 +47,11 @@ function listFallback(app) {
 
       conv.ask(
         new SimpleResponse({
-          speech: `<speak>${CAROUSEL_FALLBACK_DATA[]}</speak>`,
+          speech: `<speak>${CAROUSEL_FALLBACK_DATA[current_fallback_value]}</speak>`,
           text: CAROUSEL_FALLBACK_DATA[current_fallback_value]
         }),
         new BrowseCarousel({
-          items: carousel_items
+          items: carousel
         })
       );
       if (conv.surface.capabilities.has('actions.capability.SCREEN_OUTPUT')) {
@@ -66,4 +67,4 @@ function listFallback(app) {
     */
     conv.redirect.intent('handle_no_contexts'); // Redirect to 'handle_no_contexts' intent.
   }
-}
+});
