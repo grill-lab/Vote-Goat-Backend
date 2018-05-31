@@ -10,17 +10,6 @@ const REPEAT_PREFIX = [
 ];
 */
 
-function repeat_response_store (conv, speech, text, intent_name, intent_context) {
-  /*
-    A function for easily storing the response data.
-    Takes in the speech, text, intent name & list of fallback strings.
-  */
-  conv.data.last_intent_prompt_speech = speech;
-  conv.data.last_intent_prompt_text = text;
-  conv.data.last_intent_name = intent_name;
-  conv.data.last_intent_context = intent_context;
-}
-
 function forward_contexts (conv, intent_name, inbound_context_name, outbound_context_name) {
   /*
     A function for easily forwarding the contents of contexts!
@@ -45,22 +34,39 @@ function forward_contexts (conv, intent_name, inbound_context_name, outbound_con
   }
 }
 
+function repeat_response_store (conv, speech, text, intent_name, intent_context) {
+  /*
+    A function for easily storing the response data.
+    Takes in the speech, text, intent name & list of fallback strings.
+  */
+  conv.data.last_intent_prompt_speech = speech;
+  conv.data.last_intent_prompt_text = text;
+  conv.data.last_intent_name = intent_name;
+  conv.data.last_intent_context = intent_context;
+}
+
 app.intent('repeat', conv => {
   /*
+    Google tips:
     Create a repeat intent that listens for prompts to repeat from the user like "what?", "say that again", or "can you repeat that?".
     In the repeat intent handler, call ask() with a concatenated string of the repeat prefix and the value of conv.data.lastPrompt.
     Keep in mind that you'll have to shift any ssml opening tags if used in the last prompt.
   */
-  // TODO: Get context contents: Intent name, last prompt, fallback prompts?
-  // TODO: Storing data in 'repeat' context? Or entirely within the conv.data storage?
+
+  /*
+    This intent listens out for the user requesting the bot repeats the last phrase.
+    Most likely audio-only (or hands-free) device usage.
+  */
 
   const textToSpeech = conv.data.last_intent_prompt_speech;
   const textToDisplay = conv.data.last_intent_prompt_text;
   const intent_name = conv.data.last_intent_name; // Neccessary?
   const intent_context = conv.data.last_intent_context;
 
-  if (conv.data.last_intent_prompt_speech && conv.data.last_intent_prompt_text) {
+  if (textToSpeech && textToDisplay) {
+    forward_contexts(conv, intent_name, intent_context, intent_context); // Forward the contexts onwards!
 
+    // The required context data exists
     conv.ask(
       // We don't need anything other than simple response, as screen devices can simply scroll up to see past content.
       new SimpleResponse({
@@ -69,16 +75,20 @@ app.intent('repeat', conv => {
         text: textToDisplay
       })
     );
+
+    if (intent_name === 'recommendMovie' && hasScreen){
+      /*
+
+        Let's show the carousel again so that the
+      */
+      conv.ask(
+        new BrowseCarousel({
+          items: carousel_items
+        })
+      );
+    }
   } else {
     // No contexts were found
     conv.redirect.intent('handle_no_contexts'); // Redirect to 'handle_no_contexts' intent.
   }
-
-  forward_contexts(conv, intent_name, intent_context, intent_context); // Forward the contexts onwards!
 }
-
-/*
-  RICKY NOTE:
-  We don't need to resend the
-  We could just store the simple response contents
-*/

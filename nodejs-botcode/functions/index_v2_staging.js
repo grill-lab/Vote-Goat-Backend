@@ -1,19 +1,10 @@
 'use strict'; // Mandatory js style?
 
-const {
-  dialogflow,
-  Suggestions,
-  LinkOutSuggestionOptions,
-  BasicCard,
-  Button,
-  SimpleResponse
-} = require('actions-on-google')
+const { dialogflow, Suggestions, BasicCard, Button, SimpleResponse } = require('actions-on-google');
 
 const util = require('util');
 const functions = require('firebase-functions'); // Mandatory when using firebase
-const http = require('https'); // Required for request's https use? Or dead code?...
 const requestLib = require('request'); // Used for querying the HUG.REST API
-const moment = require('moment'); // For handling time.
 var chatbase = require('@google/chatbase')
               .setApiKey('chatbase-api-key') // Your Chatbase API Key
               .setPlatform('Google Assistant'); // The type of message you are sending to chatbase: user (user) or agent (bot)
@@ -324,7 +315,7 @@ app.intent('Welcome', conv => {
   if (hasScreen === true) {
     conv.ask(new Suggestions('🗳 Rank Movies', '🤔 Movie Recommendation', '🏆 Show Stats', `🐐 GOAT Movies`, '📑 Help', `🚪 Quit`));
   }
-})
+});
 
 app.intent('Training', (conv, { movieGenre }) => {
   /*
@@ -519,11 +510,7 @@ app.intent('Training', (conv, { movieGenre }) => {
               },
               display: 'WHITE'
             }),
-            new Suggestions(`👍`, `👎`, `📜 plot spoilers`, `🤔 recommend me a movie`, '📑 Help', `🚪 Back`),
-            new LinkOutSuggestion({
-              text: '📺 YouTube',
-              url: `https://www.youtube.com/results?search_query=${movieTitle}+${year}`
-            })
+            new Suggestions(`👍`, `👎`, `📜 plot spoilers`, `🤔 recommend me a movie`, '📑 Help', `🚪 Back`)
           );
         }
       } else {
@@ -560,13 +547,13 @@ app.intent('Training', (conv, { movieGenre }) => {
   });
 });
 
-app.intent('moreMovieInfo', (conv)) => {
+app.intent('moreMovieInfo', (conv) => {
   /*
   The purpose of the 'moreMovieDetails' function is to read aloud the movie's plot summary to the user during the training phase.
   Uses a GET request, talks to HUG and is quite verbose.
   The plot was inserted into the card, as reading it aloud would be too disruptive.
   */
-  const intent_fallback_messages = = [
+  const intent_fallback_messages = [
     `Sorry, what was that?`,
     `Sorry, I didn't catch that, would you watch ${movie_title}?`,
     `I'm sorry, I didn't understand that. Would you cosider watching ${movie_title}?`
@@ -635,15 +622,11 @@ app.intent('moreMovieInfo', (conv)) => {
     if (hasScreen === true) {
       if (requested_mode === 'list_selection') {
         conv.ask(
-          new Suggestions(`👍`, `👎`, '🗳 Rank Movies', '📑 Help', `🚪 Back`),
-          new LinkOutSuggestion({
-            text: '📺 YouTube',
-            url: `https://www.youtube.com/results?search_query=${movieTitle}+${year}`
-          })
+          new Suggestions(`👍`, `👎`, '🗳 Rank Movies', '📑 Help', `🚪 Back`)
         );
       } else {
         conv.ask(
-          new Suggestions(`👍`, `👎`, `🤔 recommend me a movie`, '📑 Help', `🚪 Back`);
+          new Suggestions(`👍`, `👎`, `🤔 recommend me a movie`, '📑 Help', `🚪 Back`)
         );
       }
     }
@@ -651,11 +634,11 @@ app.intent('moreMovieInfo', (conv)) => {
     /*
     The 'vote_context' context is not present.
     */
-    handle_no_contexts(conv);
+    conv.redirect.intent('handle_no_contexts'); // Redirect to 'handle_no_contexts' intent.
   }
-}
+});
 
-app.intent('voted', (conv, { voting })) = {
+app.intent('voted', (conv, { voting }) => {
   /*
   Provides voting functionality.
   There used to be separate functions for up/down voting - refactored into a single function!
@@ -793,7 +776,7 @@ app.intent('voted', (conv, { voting })) = {
 
           if (hasScreen === true) {
             conv.ask(
-              new Suggestions('🗳 Rank Movies', '🤔 recommend me a movie', '🏆 Show Stats', `🚪 Quit`),
+              new Suggestions('🗳 Rank Movies', '🤔 recommend me a movie', '🏆 Show Stats', `🚪 Quit`)
             );
           }
         } else {
@@ -812,10 +795,10 @@ app.intent('voted', (conv, { voting })) = {
     });
 
   } else {
-    // No 'vote_cotext' context detected!
-    handle_no_contexts(app);
+    // No 'vote_cotext' context detected
+    conv.redirect.intent('handle_no_contexts'); // Redirect to 'handle_no_contexts' intent.
   }
-}
+});
 
 app.intent('getGoat', (conv, { movieGenre }) => {
   /*
@@ -1038,9 +1021,9 @@ app.intent('getGoat', (conv, { movieGenre }) => {
   .catch(error_message => {
     return catch_error(conv, error_message, 'progress_notification');
   });
-}
+});
 
-app.intent('getLeaderboard', (conv)) = {
+app.intent('getLeaderboard', conv => {
   /*
     We want to gamify the bot, so that we encourage people to vote as much as possible.
     The more voting data we have, the better recommendations we can provide to everyone!
@@ -1127,182 +1110,172 @@ app.intent('getLeaderboard', (conv)) = {
   .catch(error_message => {
     return catch_error(conv, error_message, 'training');
   });
-}
+});
 
-app.intent('recommendMovie', (conv)) = {
+app.intent('recommendMovie', (conv) => {
+  /*
+    Movie recommendation intent.
+    Has built in A/B testing via the 'get_ab_value' HUG function.
+    TODO:
+    * Improve the HUG function to be less aggressive (x% of users, not 50% hardcoded)
+    * Replace random movies with computed model movie recommendations.
+  */
 
-  const intent_fallback_messages = [
-    "Sorry, what do you want to do next?",
-    "I didn't catch that. Do you want A, B or C?",
-    "I'm having difficulties understanding what you want to do with Vote Goat. Do you want A, B or C?"
-  ];
-
-  const qs_input = {
+  const ab_vars = {
     //  HUG REST GET request parameters
     gg_id: userId, // Anonymous google id
     api_key: 'API_KEY'
   };
 
-  return hug_request('HUG', 'get_user_ranking', 'GET', qs_input)
-  .then(body => {
-    if (body.valid_key === true) {
-    const hasScreen = conv.surface.capabilities.has('actions.capability.SCREEN_OUTPUT');
+  return hug_request('HUG', 'get_ab_value', 'GET', ab_vars)
+  .then(ab_body => {
+    if (ab_body.success === true) {
+      var ab_value = ab_body.ab_value // Either 0 or 1
+      const ab_recommendation_options = {
+        //  HUG REST GET request parameters
+        gg_id: userId, // Anonymous google id
+        api_key: 'API_KEY'
+      };
 
-    const ab_vars = {
-      //  HUG REST GET request parameters
-      gg_id: userId, // Anonymous google id
-      api_key: 'API_KEY'
-    };
+      var target_recommendation_function;
+      if (ab_value === 1) {
+        // This is how we implement basic AB testing.
+        // The user gets either a 0 or 1 from HUG, which determines the model.
+        // Potential improvements:
+        //  * Rather than getting AB value from HUG, flip a coin/die to determine % based AB testing targeting (10% probability of being picked, etc.
 
-    return hug_request('HUG', 'get_ab_value', 'GET', ab_vars)
-    .then(ab_body => {
-      if (ab_body.success === true) {
-        var ab_value = ab_body.ab_value // Either 0 or 1
-        const ab_recommendation_options = {
-          //  HUG REST GET request parameters
-          gg_id: userId, // Anonymous google id
-          api_key: 'API_KEY'
-        };
+        //url = `get_nn_list`; // Recommendation models
+        target_recommendation_function = `get_random_movie_list`; // Random
+      } else {
+        target_recommendation_function = `get_random_movie_list`; // Random
+      }
 
-        var target_recommendation_function;
-        if (ab_value === 1) {
-          // This is how we implement basic AB testing.
-          // The user gets either a 0 or 1 from HUG, which determines the model.
-          // Potential improvements:
-          //  * Rather than getting AB value from HUG, flip a coin/die to determine % based AB testing targeting (10% probability of being picked, etc.
+      return hug_request('HUG', target_recommendation_function, 'GET', ab_recommendation_options)
+      .then(rec_body => {
+        if (rec_body[0].success === true && rec_body[0].valid_key === true) {
+          const quantity_top_k = rec_body.length; // NOT PROVEN! Get the quantity of movies in top-k results.
 
-          //url = `get_nn_list`; // Recommendation models
-          target_recommendation_function = `get_random_movie_list`; // Random
+          if (quantity_top_k > 0) {
+
+            let movie_list = []; // Where we'll store the list elements
+            var parameters = {}; // Creating parameter holder
+            var carousel_items = {} // Creating carousel item holder
+
+            for (var iterator = 0; iterator < quantity_top_k; iterator++) { // Iterating over the top k rec_body results!
+              /*
+              Given the quantity of movies returned in the JSON (eventually top-k movies),
+              produce the 'buildOptionItem' element and store it in the 'movie_list' list.
+              */
+
+              if (iterator > 9) {
+                 // Can't place more than 10 items in the carousel!
+                break;
+              } else {
+                // Extracting neccessary data from the returned HUG JSON response
+                const index_value = index.toString(); // Creating string representation of index for context data
+                const current_movieTitle = rec_body[index].title;
+                const current_movieYear = rec_body[index].year;
+                const current_posterURL = rec_body[index].poster_url;
+
+                /*
+                let genres = rec_body[index].genres; // NOT CONST! Because we want to potentially edit the last element to 'and genre'
+                if (Array.isArray(genres)) {
+                  const quantity_genres = genres.length; // Quantity of genres in the genre array
+                  if (quantity_genres > 1) { // More than one genre? Engage!
+                    genres[quantity_genres - 1] = 'and ' + genres[quantity_genres - 1]; // We're setting the last actor array element to 'and <actor>'
+                  }
+                }
+                const genre_list = (genres.join(', ')).replace(', and', ' and'); // Merge into a string, optimize gramar.
+                */
+                const genre_list = helpExtract(rec_body[index].genres);
+
+                parameters[index_value] = rec_body[index]; // Inserting the 'get_random_movie_list' rec_body contents into the context parameter.
+
+                // Need to insert 9 movies into carousel item
+                carousel_items[index_value] =
+                  new BrowseCarouselItem({
+                    title: `${current_movieTitle}`,
+                    description: `Genres: ${genre_list}`,
+                    image: new Image({
+                      url: `${current_posterURL}`,
+                      alt: `${current_movieTitle}`,
+                    }),
+                    footer: `# ${iterator}`,
+                    synonyms: [`${iterator}`, `${current_movieTitle}`]
+                  });
+              }
+            }
+
+            conv.contexts.set('list_body', 1, parameters); // Setting the outbound context to include the JSON rec_body parameter data!
+
+            const hasScreen = conv.surface.capabilities.has('actions.capability.SCREEN_OUTPUT');
+            if (hasScreen === true) {
+              /*
+                The user has a screen, let's show the carousel & suggestions
+              */
+              conv.ask(
+                new SimpleResponse('Alright, here are a few movies which I think you will like!'),
+                // Create a browse carousel
+                new BrowseCarousel({
+                  items: carousel_items
+                }),
+                new Suggestions('🗳 Rank Movies', '🏆 Show Stats', '📑 Help', `🚪 Back`)
+              );
+            } else {
+              /*
+              Best practice (according to Google) for presenting list/carousel items to speaker-only users is to only provide the first 3 movies.
+              We still hold the data for movies 0-9 in the background, but we only tell the user about the first 3.
+              This can be changed at any time by adding lines w/ incremented '${rec_body[x].title}' tags.
+              */
+              const textToSpeech = `<speak>` +
+                `Would you watch the following movies? <break time="0.25s" /> ` +
+                `${rec_body[0].title}? <break time="0.35s" /> ` +
+                `${rec_body[1].title}? <break time="0.35s" /> ` +
+                `${rec_body[2].title}? <break time="0.35s" /> ` +
+                `</speak>`;
+
+              // Do we even need to provide the speakers text to display? Will potentially throw a warning?
+              const textToDisplay = `Would you watch the following movies? ` +
+                                    `${rec_body[0].title}? ` +
+                                    `${rec_body[1].title}? ` +
+                                    `${rec_body[2].title}? `;
+
+              conv.ask(
+                new SimpleResponse({
+                  speech: textToSpeech,
+                  text: textToDisplay
+                })
+              );
+
+            }
+
+            conv.contexts.set('recommend_movie_context', 1, {
+              "placeholder": "placeholder",
+              "repeatedCarousel": carousel_contents
+            });
+
+          } else {
+            console.log("recommendMovie: No movies were returned! Movies SHOULD have been returned!");
+            // RATHER THAN SENDING TO ERROR, REDIRECT TO FALLBACK?
+            return catch_error(conv, 'No movies found', 'recommendation');
+          }
         } else {
-          target_recommendation_function = `get_random_movie_list`; // Random
+          return catch_error(conv, 'Either incorrect key, or HUG fail!', 'recommendation');
         }
 
-        return hug_request('HUG', target_recommendation_function, 'GET', ab_recommendation_options)
-        .then(rec_body => {
-          if (rec_body[0].success === true && rec_body[0].valid_key === true) {
-            const quantity_top_k = rec_body.length; // NOT PROVEN! Get the quantity of movies in top-k results.
-
-            if (quantity_top_k > 0) {
-
-              let movie_list = []; // Where we'll store the list elements
-              var parameters = {}; // Creating parameter holder
-              var carousel_items = {} // Creating carousel item holder
-
-              for (var iterator = 0; iterator < quantity_top_k; iterator++) { // Iterating over the top k rec_body results!
-                /*
-                Given the quantity of movies returned in the JSON (eventually top-k movies),
-                produce the 'buildOptionItem' element and store it in the 'movie_list' list.
-                */
-
-                if (iterator > 9) {
-                   // Can't place more than 10 items in the carousel!
-                  break;
-                } else {
-                  // Extracting neccessary data from the returned HUG JSON response
-                  const index_value = index.toString(); // Creating string representation of index for context data
-                  const current_movieTitle = rec_body[index].title;
-                  const current_movieYear = rec_body[index].year;
-                  const current_posterURL = rec_body[index].poster_url;
-
-                  /*
-                  let genres = rec_body[index].genres; // NOT CONST! Because we want to potentially edit the last element to 'and genre'
-                  if (Array.isArray(genres)) {
-                    const quantity_genres = genres.length; // Quantity of genres in the genre array
-                    if (quantity_genres > 1) { // More than one genre? Engage!
-                      genres[quantity_genres - 1] = 'and ' + genres[quantity_genres - 1]; // We're setting the last actor array element to 'and <actor>'
-                    }
-                  }
-                  const genre_list = (genres.join(', ')).replace(', and', ' and'); // Merge into a string, optimize gramar.
-                  */
-                  const genre_list = helpExtract(rec_body[index].genres);
-
-                  parameters[index_value] = rec_body[index]; // Inserting the 'get_random_movie_list' rec_body contents into the context parameter.
-
-                  // Need to insert 9 movies into carousel item
-                  carousel_items[index_value] = {
-                    new BrowseCarouselItem({
-                      title: `${current_movieTitle}`,
-                      description: `Genres: ${genre_list}`,
-                      image: new Image({
-                        url: `${current_posterURL}`,
-                        alt: `${current_movieTitle}`,
-                      }),
-                      footer: `# ${iterator}`,
-                      synonyms: [`${iterator}`, `${current_movieTitle}`]
-                    })
-                  };
-                }
-              }
-
-              conv.contexts.set('list_body', 1, parameters); // Setting the outbound context to include the JSON rec_body parameter data!
-
-              if (hasScreen === true) {
-                conv.ask(
-                  new SimpleResponse('Alright, here are a few movies which I think you will like!'),
-                  // Create a browse carousel
-                  new BrowseCarousel({
-                    items: carousel_items
-                  }),
-                  new Suggestions('🗳 Rank Movies', '🏆 Show Stats', '📑 Help', `🚪 Back`)
-                );
-              } else {
-                /*
-                Best practice (according to Google) for presenting list/carousel items to speaker-only users is to only provide the first 3 movies.
-                We still hold the data for movies 0-9 in the background, but we only tell the user about the first 3.
-                This can be changed at any time by adding lines w/ incremented '${rec_body[x].title}' tags.
-                */
-                const textToSpeech = `<speak>` +
-                  `Would you watch the following movies? <break time="0.25s" /> ` +
-                  `${rec_body[0].title}? <break time="0.35s" /> ` +
-                  `${rec_body[1].title}? <break time="0.35s" /> ` +
-                  `${rec_body[2].title}? <break time="0.35s" /> ` +
-                  `</speak>`;
-
-                // Do we even need to provide the speakers text to display? Will potentially throw a warning?
-                const textToDisplay = `Would you watch the following movies? ` +
-                                      `${rec_body[0].title}? ` +
-                                      `${rec_body[1].title}? ` +
-                                      `${rec_body[2].title}? `;
-
-                conv.ask(
-                  new SimpleResponse({
-                    speech: textToSpeech,
-                    text: textToDisplay
-                  })
-                );
-
-              }
-
-              conv.contexts.set('recommend_movie_context', 1, {
-                "placeholder": "placeholder",
-                "repeatedCarousel": carousel_contents
-              });
-
-            } else {
-              console.log("recommendMovie: No movies were returned! Movies SHOULD have been returned!");
-              // RATHER THAN SENDING TO ERROR, REDIRECT TO FALLBACK?
-              return catch_error(conv, 'No movies found', 'recommendation');
-            }
-          } else {
-            return catch_error(conv, 'Either incorrect key, or HUG fail!', 'recommendation');
-          }
-
-        })
-        .catch(error_message => {
-          return catch_error(conv, error_message, 'recommendation');
-        });
-      }
-    }) // END of the GET request!
-    .catch(error_message => {
-      return catch_error(conv, error_message, 'recommendation');
-    });
-  })
+      })
+      .catch(error_message => {
+        return catch_error(conv, error_message, 'recommendation');
+      });
+    }
+  }) // END of the GET request!
   .catch(error_message => {
-    return catch_error(conv, error_message, 'training');
+    return catch_error(conv, error_message, 'recommendation');
   });
-}
 
-app.intent('dislikeRecommendations', (conv)) = {
+});
+
+app.intent('dislikeRecommendations', (conv) => {
   /*
   Erasing the contexts then sending users to training mode!
   */
@@ -1405,26 +1378,36 @@ app.intent('dislikeRecommendations', (conv)) = {
     // });
   } else {
     // This shouldn't trigger, but better safer than sorry!
-    handle_no_contexts(app);
+    conv.redirect.intent('handle_no_contexts'); // Redirect to 'handle_no_contexts' intent.
   }
-}
+});
 
-app.intent('itemSelected', (conv)) = {
+app.intent('itemSelected', (conv, input, option) => {
   /*
   Helper for carousel - reacting to item selection.
   Code from: https://developers.google.com/actions/assistant/helpers#getting_the_results_of_the_helper_1
   Get & compare the user's selections to each of the item's keys
   The param is set to the index when looping over the results to create the addItems contents.
+
+  // RICKY NOTE: NOT COMPLETE!
+
   */
   if (conv.contexts.get('list_body', '0')) {
-    console.log("INSIDE: itemSelected");
-    const param = app.getSelectedOption(); // Getting the clicked list item!
-    // TODO: CHECK THE ABOVE IS V2!
-
+    //console.log("INSIDE: itemSelected");
     var movie_element; // Where we'll store the JSON details of the clicked item!
 
     conv.data.fallbackCount = 0; // Required for tracking fallback attempts!
+    const possible_parameters = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9'];
 
+    if (possible_parameters.includes(option)) {
+      // Extract the contents of the selected movie from the 'list_body' context.
+      movie_element = conv.contexts.get('list_body', option).value;
+    } else {
+      // They somehow clicked on something not in the carousel, abandon ship!
+      conv.close('You selected an unknown item from the list or carousel, for safety the bot will quit.');
+    }
+
+    /*
     if (!param) {
       // How did they manage this? Let's kick them out!
       conv.close('You did not select any item from the list or carousel, for safety the bot will quit.');
@@ -1452,6 +1435,7 @@ app.intent('itemSelected', (conv)) = {
       // They somehow clicked on something not in the carousel, abandon ship!
       conv.close('You selected an unknown item from the list or carousel, for safety the bot will quit.');
     }
+    */
 
     const options = {
       url: `${hug_host}/log_clicked_item`,
@@ -1489,7 +1473,7 @@ app.intent('itemSelected', (conv)) = {
     });
 
     var title_var = (movie_element.title).replace('&', 'and'); // & characters invalidate SSML
-    var plot_var = (movie_element.plot).replace('&', 'and'); // & characters invalidate SSML
+    //var plot_var = (movie_element.plot).replace('&', 'and'); // & characters invalidate SSML
 
     conv.contexts.get('vote_context', 1, { // Setting the mode for upvote/downvote to detect where we are!
       "mode": 'list_selection', // Setting the mode for upvote/downvote to detect where we are!
@@ -1514,25 +1498,13 @@ app.intent('itemSelected', (conv)) = {
     `Director: ${title_var}\n` +
     `IMDB Rating: ${title_var}\n` +
     `Title: ${title_var}\n` +
-    `Title: ${title_var}\n` +
-
-    const textToDisplay1 = `"${title_var}" was released in ${movie_element.year}, it was directed by ${director_list} and it currently has an IMDB rating of ${movie_element.imdbRating}/10. \n\n` +
-      `The cast of ${title_var} is primarily comprised of ${actor_list}. \n\n` +
-      genre_text;
-
-    const textToSpeech2 = `Are you interested in watching ${title_var}?`;
-    const textToDisplay2 = `Are you interested in watching ${title_var}?`;
+    `Title: ${title_var}`;
 
     conv.ask(
       new SimpleResponse({
         // Sending the details to the user
         speech: textToSpeech1,
         text: textToDisplay1
-      }),
-      new SimpleResponse({
-        // Sending the details to the user
-        speech: textToSpeech2,
-        text: textToDisplay2
       })
     );
 
@@ -1553,18 +1525,14 @@ app.intent('itemSelected', (conv)) = {
           },
           display: 'WHITE'
         }),
-        new Suggestions(`👍`, `👎`, `📜 plot spoilers`, '🗳 Rank Movies', '🏆 Show Stats', '📑 Help', `🚪 Back`),
-        new LinkOutSuggestion({
-          text: '📺 YouTube',
-          url: `https://www.youtube.com/results?search_query=${movieTitle}+${year}`
-        })
+        new Suggestions(`👍`, `👎`, `📜 plot spoilers`, '🗳 Rank Movies', '🏆 Show Stats', '📑 Help', `🚪 Back`)
       );
     }
   } else {
     // Shouldn't happen, but better safe than sorry!
-    handle_no_contexts(app);
+    conv.redirect.intent('handle_no_contexts'); // Redirect to 'handle_no_contexts' intent.
   }
-} // end of itemSelected function!
+}); // end of itemSelected function!
 
 app.intent('input.unknown', conv => {
   /*
@@ -1581,7 +1549,7 @@ app.intent('input.unknown', conv => {
   const suggestions = ['🗳 Rank Movies', '🤔 Movie Recommendation', '🏆 Show Stats', `🐐 GOAT Movies`, '📑 Help', `🚪 Quit`]
 
   return genericFallback(conv, `bot.fallback`, intent_fallback_messages, suggestions);
-})
+});
 
 app.intent('getHelpAnywhere', conv => {
   /*
@@ -1652,7 +1620,7 @@ app.intent('getHelpAnywhere', conv => {
       new Suggestions('🗳 Rank Movies', '🤔 Movie Recommendation', '🏆 Show Stats', `🚪 Quit`)
     );
   }
-})
+});
 
 app.intent('goodbye', conv => {
   /*
@@ -1680,7 +1648,7 @@ app.intent('goodbye', conv => {
       text: displayText
     })
   );
-})
+});
 
 app.catch((conv, error_message) => {
   /*
@@ -1689,6 +1657,6 @@ app.catch((conv, error_message) => {
   console.error(error_message);
   conv.user.storage = {};
   return catch_error(conv, error_message, 'Worker.One');
-})
+});
 
-exports.VoteGoat = functions.https.onRequest(app)
+exports.VoteGoat = functions.https.onRequest(app);
