@@ -475,6 +475,8 @@ app.intent('Welcome', conv => {
   welcome_param['placeholder'] = 'placeholder'; // We need this placeholder
   conv.contexts.set('home', 1, welcome_param); // We need to insert data into the 'home' context for the home fallback to trigger!
 
+  const userId = parse_userId(conv);
+
   const MENU_FALLBACK = [
     "Sorry, what do you want to do?",
     "I didn't catch that. Do you want to rank movies, receive movie recommendations, view your leaderboard position or get help using Vote Goat?",
@@ -542,6 +544,8 @@ app.intent('Training', (conv, { movieGenre }) => {
   const parameter = {}; // The dict which will hold our parameter data
   parameter['placeholder'] = 'placeholder'; // We need this placeholder
   conv.contexts.set('template', 1, parameter); // Need to set the data
+
+  const userId = parse_userId(conv);
 
   let movie_genres_string;
 
@@ -737,7 +741,7 @@ app.intent('Training', (conv, { movieGenre }) => {
                             `Sorry, Vote Goat couldn't find relevant movies. Please use fewer movie genres. What do you want to do next? <break time="0.5s" /> ` +
                             `</speak>`;
 
-        const displayText = `Sorry, Vote Goat couldn't find relevant movies. Please use fewer movie genres. What do you want to do next?`;
+        const textToDisplay = `Sorry, Vote Goat couldn't find relevant movies. Please use fewer movie genres. What do you want to do next?`;
 
         conv.ask(
           new SimpleResponse({
@@ -865,6 +869,7 @@ app.intent('voted', (conv, { voting }) => {
   ];
 
   if (conv.contexts.get('vote_context', 'mode')) {
+    const userId = parse_userId(conv);
     const requested_mode = conv.contexts.get('vote_context', 'mode').value; // Retrieving the expected voting mode (within a list, or during training)!
     const movie_imdb_id = conv.contexts.get('vote_context', 'movie').value; // Retrieving the movie we want to downvote!
 
@@ -1044,9 +1049,10 @@ app.intent('getGoat', (conv, { movieGenre }) => {
         let movie_title_length_limit;
         let goat_text = ``;
         let textToSpeech = ``;
-        let speechToText = ``;
-        let goat_voice = ``;
         let textToDisplay = ``;
+        let goat_voice = ``;
+
+        /*
         let quantity_results;
 
         if (hasScreen === true) {
@@ -1054,6 +1060,7 @@ app.intent('getGoat', (conv, { movieGenre }) => {
         } else {
           quantity_results = 3;
         }
+        */
 
         if (movieGenre.length > 0) {
           /*
@@ -1108,7 +1115,7 @@ app.intent('getGoat', (conv, { movieGenre }) => {
                              `The greatest ${movie_genres_comma_separated_string} movies of all time, as determined by our userbase are: <break time="0.35s" /> ` +
                               goat_voice +
                            `</speak>`;
-            speechToText = `The greatest ${movie_genres_comma_separated_string} movies of all time, as determined by our userbase are: \n\n` +
+            textToDisplay = `The greatest ${movie_genres_comma_separated_string} movies of all time, as determined by our userbase are: \n\n` +
                               goat_text;
           } else {
             // The user didn't provide genre parameters
@@ -1116,7 +1123,7 @@ app.intent('getGoat', (conv, { movieGenre }) => {
                              `The greatest movies of all time, as determined by our userbase are: <break time="0.35s" /> ` +
                               goat_voice +
                            `</speak>`;
-            speechToText = `The greatest movies of all time, as determined by our userbase are: \n\n` +
+            textToDisplay = `The greatest movies of all time, as determined by our userbase are: \n\n` +
                               goat_text;
           }
 
@@ -1126,6 +1133,10 @@ app.intent('getGoat', (conv, { movieGenre }) => {
                            `(E.g "greatest scary funny movies of all time)."` +
                            `Try looking for these movies on YouTube or the Google Play Movie store.`;
           conv.ask(
+            new SimpleResponse({
+              speech: textToSpeech,
+              text: textToDisplay
+            }),
             new BasicCard({
               title: `🐐 GOAT (Greatest Of All Time) Movie Tips!`,
               text: pro_tips,/*
@@ -1147,7 +1158,10 @@ app.intent('getGoat', (conv, { movieGenre }) => {
             Best practice is to only present 3 list results, not 10.
             We aught to provide some sort of paging to
           */
+
+          // TODO: Switch the following line for the helper function!
           const genre_title = movie_genres_parameter_data.join(', ')
+
           if (genre_title != ``) {
             textToSpeech = `<speak>The 3 greatest ${genre_title} movies of all time, as determined by our userbase are: <break time="0.35s" />`;
             textToDisplay = `The 3 greatest ${genre_title} movies of all time, as determined by our userbase are:`;
@@ -1248,6 +1262,8 @@ app.intent('getLeaderboard', conv => {
     "I'm having difficulties understanding what you want to do with Vote Goat. Do you want to rank movies, receive personalized movie recommendations, view your Vote Goat leaderboard position or learn how to use Vote Goat?"
   ];
 
+  const userId = parse_userId(conv);
+
   const qs_input = {
     //  HUG REST GET request parameters
     gg_id: userId, // Anonymous google id
@@ -1335,6 +1351,8 @@ app.intent('recommendMovie', (conv) => {
     * Replace random movies with computed model movie recommendations.
   */
 
+  const userId = parse_userId(conv);
+
   const ab_lets = {
     //  HUG REST GET request parameters
     gg_id: userId, // Anonymous google id
@@ -1386,10 +1404,10 @@ app.intent('recommendMovie', (conv) => {
                 break;
               } else {
                 // Extracting neccessary data from the returned HUG JSON response
-                const index_value = index.toString(); // Creating string representation of index for context data
-                const current_movieTitle = rec_body[index].title;
-                const current_movieYear = rec_body[index].year;
-                const current_posterURL = rec_body[index].poster_url;
+                const index_value = iterator.toString(); // Creating string representation of index for context data
+                const current_movieTitle = rec_body[iterator].title;
+                const current_movieYear = rec_body[iterator].year;
+                const current_posterURL = rec_body[iterator].poster_url;
 
                 /*
                 let genres = rec_body[index].genres; // NOT CONST! Because we want to potentially edit the last element to 'and genre'
@@ -1401,9 +1419,9 @@ app.intent('recommendMovie', (conv) => {
                 }
                 const genre_list = (genres.join(', ')).replace(', and', ' and'); // Merge into a string, optimize gramar.
                 */
-                const genre_list = helpExtract(rec_body[index].genres);
+                const genre_list = helpExtract(rec_body[iterator].genres);
 
-                parameters[index_value] = rec_body[index]; // Inserting the 'get_random_movie_list' rec_body contents into the context parameter.
+                parameters[index_value] = rec_body[iterator]; // Inserting the 'get_random_movie_list' rec_body contents into the context parameter.
 
                 // Need to insert 9 movies into carousel item
                 carousel_items[index_value] =
@@ -1507,6 +1525,8 @@ app.intent('dislikeRecommendations', (conv) => {
       // For speakers, skipping submitting bad ratings to movies 3-9 (not displayed to them).
       iterator_max = 2;
     }
+
+    const userId = parse_userId(conv);
 
     for (let iterator = 0; iterator < 10; iterator++) { // Iterating over the top k body results!
 
@@ -1650,6 +1670,8 @@ app.intent('itemSelected', (conv, input, option) => {
       conv.close('You selected an unknown item from the list or carousel, for safety the bot will quit.');
     }
     */
+
+    const userId = parse_userId(conv);
 
     const options = {
       url: `${hug_host}/log_clicked_item`,
@@ -1979,7 +2001,7 @@ app.intent('goodbye', conv => {
     'Win' // win_or_fail
   );
 
-  conv.user.storage = {};
+  conv.data = {};
   conv.close(
     new SimpleResponse({
       // Sending the details to the user
