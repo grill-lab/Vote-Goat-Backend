@@ -99,6 +99,7 @@ function chatbase_analytics(conv, input_message, input_intent, win_or_fail) {
   Integrating chatbase chat bot analytics.
   Will help optimize user experience whilst minimizing privacy impact.
   */
+  // TODO: Change the UserID used here!
   let lookup_user_id = conv.user.id;
   let userId;
 
@@ -634,7 +635,7 @@ app.intent('Training', (conv, { movieGenre }) => {
       if (body.success === true) {
         // Triggers if a movie was found.
         // Retrieving data from the 'get_single_training_movie' JSON request result
-        const moviePlot = body.plot;
+        // const moviePlot = body.plot;
         const plot = (body.plot).replace('&', 'and');
         const year = body.year;
         const posterURL = body.poster_url;
@@ -772,12 +773,6 @@ app.intent('moreMovieInfo', (conv) => {
   Uses a GET request, talks to HUG and is quite verbose.
   The plot was inserted into the card, as reading it aloud would be too disruptive.
   */
-  const intent_fallback_messages = [
-    `Sorry, what was that?`,
-    `Sorry, I didn't catch that, would you watch ${movie_title}?`,
-    `I'm sorry, I didn't understand that. Would you cosider watching ${movie_title}?`
-  ];
-
   if (conv.contexts.get('vote_context', 'mode')) {
     if (conv.contexts.get('forward_genre', 'movieGenres')) {
       /*
@@ -800,8 +795,14 @@ app.intent('moreMovieInfo', (conv) => {
     const requested_mode = conv.contexts.get('vote_context', 'mode').value; // Retrieving the expected voting mode (within a list, or during training)!
     const movie_imdb_id = conv.contexts.get('vote_context', 'movie').value; // Retrieving the movie we want to downvote!
     const movie_title = conv.contexts.get('vote_context', 'title').value; // Retrieving the title
-    const movie_year = conv.contexts.get('vote_context', 'year').value; // Retrieving the plot
+    //const movie_year = conv.contexts.get('vote_context', 'year').value; // Retrieving the plot
     let movie_plot = conv.contexts.get('vote_context', 'plot').value; // Retrieving the plot
+
+    const intent_fallback_messages = [
+      `Sorry, what was that?`,
+      `Sorry, I didn't catch that, would you watch ${movie_title}?`,
+      `I'm sorry, I didn't understand that. Would you cosider watching ${movie_title}?`
+    ];
 
     let intro_text = `Warning! ${movie_title} plot spoilers! `;
     let confirmation_text = `Would you watch "${movie_title}"?`;
@@ -862,6 +863,8 @@ app.intent('voted', (conv, { voting }) => {
   Provides voting functionality.
   There used to be separate functions for up/down voting - refactored into a single function!
   */
+  const movie_title = conv.contexts.get('vote_context', 'title').value; // Retrieving the expected voting mode (within a list, or during training)!
+
   const intent_fallback_messages = [
     `Sorry, what was that?`,
     `Sorry, I didn't catch that, would you watch ${movie_title}?`,
@@ -921,11 +924,11 @@ app.intent('voted', (conv, { voting }) => {
       } else {
         // We didn't hear any valid input from the user!
         console.log("VOTE ERROR: NO VOTES!");
-        votingFallback(app);
+        conv.redirect.intent('');
       }
     } else {
-      console.log("ERROR: Vote is not stored in an array! Has the workaround been removed?");
-      serious_error_encountered(app);
+      console.log("ERROR: Vote is not valid?");
+      return catch_error(conv, 'ERROR: Vote is not valid?', 'voted');
     }
 
     console.log(`VOTING ACTION: ${requested_mode}, imdbID: ${movie_imdb_id}, vote intention: ${voting_intention}`);
@@ -960,7 +963,6 @@ app.intent('voted', (conv, { voting }) => {
 
           if (voting_intention === 1) {
             // The user upvoted
-            const movie_title = conv.contexts.get('vote_context', 'title').value; // Retrieving the expected voting mode (within a list, or during training)!
             textToSpeech = `<speak>` +
               `Huzzah, a successful movie recommendation! <break time="0.25s" /> ` +
               `Try looking for ${movie_title} on YouTube or the Google Play store. <break time="0.5s" /> ` +
@@ -1001,7 +1003,6 @@ app.intent('voted', (conv, { voting }) => {
           }
         } else {
           console.log('An error was encountered in upvote function');
-          small_error_encountered(app); // Minor failure handling
           return catch_error(conv, 'No voting mode detected!', 'voting intent');
         }
       } else {
@@ -1158,13 +1159,9 @@ app.intent('getGoat', (conv, { movieGenre }) => {
             Best practice is to only present 3 list results, not 10.
             We aught to provide some sort of paging to
           */
-
-          // TODO: Switch the following line for the helper function!
-          const genre_title = movie_genres_parameter_data.join(', ')
-
-          if (genre_title != ``) {
-            textToSpeech = `<speak>The 3 greatest ${genre_title} movies of all time, as determined by our userbase are: <break time="0.35s" />`;
-            textToDisplay = `The 3 greatest ${genre_title} movies of all time, as determined by our userbase are:`;
+          if (movie_genres_comma_separated_string != ``) { // TODO: Check if the function returns '' or ' '!
+            textToSpeech = `<speak>The 3 greatest ${movie_genres_comma_separated_string} movies of all time, as determined by our userbase are: <break time="0.35s" />`;
+            textToDisplay = `The 3 greatest ${movie_genres_comma_separated_string} movies of all time, as determined by our userbase are:`;
           } else {
             textToSpeech = `<speak>` +
               `The 3 greatest movies of all time, as determined by our userbase are: <break time="0.35s" />`;
@@ -1208,7 +1205,7 @@ app.intent('getGoat', (conv, { movieGenre }) => {
         Perhaps this is because the user has entered too many movie genres?
       */
       let textToSpeech;
-      let speechToText;
+      let textToDisplay;
 
       if (movie_genres_parameter_data.length > 0) {
         textToSpeech = `<speak>` +
@@ -1233,6 +1230,8 @@ app.intent('getGoat', (conv, { movieGenre }) => {
           text: textToDisplay
         })
       );
+
+      const hasScreen = conv.surface.capabilities.has('actions.capability.SCREEN_OUTPUT');
 
       if (hasScreen === true) {
         // The user has a screen, let's show them suggestion buttons.
@@ -1277,7 +1276,7 @@ app.intent('getLeaderboard', conv => {
     if (body.success === true && body.valid_key === true) {
 
       let textToSpeech;
-      let displayText;
+      let textToDisplay;
 
       if (body.total_movie_votes > 0) {
         textToSpeech = `<speak>` +
@@ -1389,7 +1388,7 @@ app.intent('recommendMovie', (conv) => {
 
           if (quantity_top_k > 0) {
 
-            let movie_list = []; // Where we'll store the list elements
+            //let movie_list = []; // Where we'll store the list elements
             let parameters = {}; // Creating parameter holder
             let carousel_items = {} // Creating carousel item holder
 
@@ -1406,7 +1405,7 @@ app.intent('recommendMovie', (conv) => {
                 // Extracting neccessary data from the returned HUG JSON response
                 const index_value = iterator.toString(); // Creating string representation of index for context data
                 const current_movieTitle = rec_body[iterator].title;
-                const current_movieYear = rec_body[iterator].year;
+                //const current_movieYear = rec_body[iterator].year;
                 const current_posterURL = rec_body[iterator].poster_url;
 
                 /*
@@ -1483,7 +1482,7 @@ app.intent('recommendMovie', (conv) => {
 
             conv.contexts.set('recommend_movie_context', 1, {
               "placeholder": "placeholder",
-              "repeatedCarousel": carousel_contents
+              "repeatedCarousel": carousel_items
             });
 
           } else {
@@ -1537,6 +1536,7 @@ app.intent('dislikeRecommendations', (conv) => {
         let movie_element = conv.contexts.get('list_body', string_iterator).value;
         let movie_imdb_id = movie_element.imdbID;
 
+        // TODO: Migrate the following GET request to the hug_request function!
         const options = {
           url: `${hug_host}/submit_movie_rating`,
           method: 'POST', // POST request, not GET.
@@ -1673,6 +1673,7 @@ app.intent('itemSelected', (conv, input, option) => {
 
     const userId = parse_userId(conv);
 
+    // TODO: Migrate the following to use the 'hug_request' function!
     const options = {
       url: `${hug_host}/log_clicked_item`,
       method: 'POST', // POST request, not GET.

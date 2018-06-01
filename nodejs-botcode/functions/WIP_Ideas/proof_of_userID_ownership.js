@@ -27,6 +27,7 @@ app.intent('userIDProof', conv => {
     const sign = crypto.createSign('SHA512'); // Setting signing algo to SHA512
     sign.update(hash); // Targetting the hashed userID
     const privateKey = functions.config().votegoat.private_signing_key;
+
     // TODO: NEED TO SET ABOVE KEY IN FIREBASE CLI:
     // firebase functions:config:set votegoat.private_signing_key="THE RSA PRIVATE KEY"
     // https://firebase.google.com/docs/functions/config-env
@@ -50,6 +51,7 @@ app.intent('userIDProof', conv => {
       'userIDProof', // input_intent
       'Win' // win_or_fail
     );
+    
   } else if (hasScreen === false && userIDCheck === 'valid') {
     textToSpeech = `<speak>` +
       `Sorry, you require a screen to access this functionality.` +
