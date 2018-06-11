@@ -861,7 +861,6 @@ app.intent('moreMovieInfo', (conv) => {
 app.intent('voted', (conv, { voting }) => {
   /*
   Provides voting functionality.
-  There used to be separate functions for up/down voting - refactored into a single function!
   */
   const movie_title = conv.contexts.get('vote_context', 'title').value; // Retrieving the expected voting mode (within a list, or during training)!
 
@@ -1023,9 +1022,7 @@ app.intent('voted', (conv, { voting }) => {
 
 app.intent('getGoat', (conv, { movieGenre }) => {
   /*
-  Displaying the most upvoted movies to the user in a simple/dumb manner.
-  Can't produce tables, could create a list/carousel but that'd take more time than remaining.
-  Can't produce many outbound links.
+  Displaying the most upvoted movies to the user.
   */
   conv.data.fallbackCount = 0; // Required for tracking fallback attempts! // For fallback handling
 
@@ -1343,11 +1340,15 @@ app.intent('getLeaderboard', conv => {
 
 app.intent('recommendMovie', (conv) => {
   /*
-    Movie recommendation intent.
-    Has built in A/B testing via the 'get_ab_value' HUG function.
-    TODO:
-    * Improve the HUG function to be less aggressive (x% of users, not 50% hardcoded)
-    * Replace random movies with computed model movie recommendations.
+  Movie recommendation intent.
+  Has built in A/B testing via the 'get_ab_value' HUG function.
+  TODO:
+  * Improve the HUG function to be less aggressive (x% of users, not 50% hardcoded)
+  * Replace random movies with computed model movie recommendations.    Movie recommendation intent.
+      Has built in A/B testing via the 'get_ab_value' HUG function.
+      TODO:
+      * Improve the HUG function to be less aggressive (x% of users, not 50% hardcoded)
+      * Replace random movies with computed model movie recommendations.
   */
 
   const userId = parse_userId(conv);
@@ -1619,7 +1620,7 @@ app.intent('dislikeRecommendations', (conv) => {
 app.intent('itemSelected', (conv, input, option) => {
   /*
   Helper for carousel - reacting to item selection.
-  Code from: https://developers.google.com/actions/assistant/helpers#getting_the_results_of_the_helper_1
+  Related: https://developers.google.com/actions/assistant/helpers#getting_the_results_of_the_helper_1
   Get & compare the user's selections to each of the item's keys
   The param is set to the index when looping over the results to create the addItems contents.
 
@@ -1861,9 +1862,7 @@ app.intent('listFallback', (conv) => {
 
 app.intent('handle_no_contexts', conv => {
   /*
-  Any ghost contexts shall never haunt us again!
-  We shall catch cases where the user got to an intent when they shouldn't have.
-  Shouldn't be neccessary with correct dialogflow input contexts... :(
+  The purpose of this intent is to handle situations where a context was required but not present within the user's device. This intent ideally is never called, but was triggered during development of v1 occasionally.
   */
   conv.user.storage.fallbackCount = 0; // Required for tracking fallback attempts!
 
@@ -1916,7 +1915,6 @@ app.intent('handle_no_contexts', conv => {
 app.intent('getHelpAnywhere', conv => {
   /*
   Provides the user the ability to get help anywhere they are in the bot.
-  Pretty much a duplicate of the welcome/home function, minus the greeting!
   */
   const help_anywhere_parameter = {}; // The dict which will hold our parameter data
   help_anywhere_parameter['placeholder'] = 'placeholder'; // We need this placeholder
@@ -1986,7 +1984,8 @@ app.intent('getHelpAnywhere', conv => {
 
 app.intent('goodbye', conv => {
   /*
-  Elaborate goodbye intent
+  An intent enabling the user to manually quit the bot.
+  We can't provide suggestion chips, but button links still work (for outbound survey request on exit).
   */
   const textToSpeech = `<speak>` +
     `Sorry to see you go, come back soon? <break time="0.35s" /> ` +
