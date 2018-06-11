@@ -1,3 +1,5 @@
+const crypto = require('crypto');
+
 app.intent('userIDProof', conv => {
   /*
     Providing the user a proof of userID ownership by signing the userID with our openssl private key.
@@ -51,7 +53,7 @@ app.intent('userIDProof', conv => {
       'userIDProof', // input_intent
       'Win' // win_or_fail
     );
-    
+
   } else if (hasScreen === false && userIDCheck === 'valid') {
     textToSpeech = `<speak>` +
       `Sorry, you require a screen to access this functionality.` +

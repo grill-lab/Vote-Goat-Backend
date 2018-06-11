@@ -2,8 +2,7 @@
 
 // Requirements & Global vars:
 
-const { dialogflow, Suggestions, BasicCard, Button, BrowseCarousel, SimpleResponse } = require('actions-on-google');
-const crypto = require('crypto');
+const { dialogflow, Suggestions, BasicCard, Button, BrowseCarousel,  BrowseCarouselItem, Image, SimpleResponse } = require('actions-on-google');
 const functions = require('firebase-functions'); // Mandatory when using firebase
 const requestLib = require('request'); // Used for querying the HUG.REST API
 const util = require('util');
@@ -12,7 +11,7 @@ let chatbase = require('@google/chatbase')
               .setApiKey('chatbase-api-key') // Your Chatbase API Key
               .setPlatform('Google Assistant'); // The type of message you are sending to chatbase: user (user) or agent (bot)
 
-//const hug_nn_host = 'https://nn.domain.tld'; // This is the online neural network server!
+const hug_nn_host = 'https://nn.domain.tld'; // This is the online neural network server!
 const hug_host = 'https://prod.domain.tld'; // THIS IS THE PRODUCTION SERVER! CHANGE WHEN RUNNING STAGING TESTS!
 
 const app = dialogflow({
@@ -53,10 +52,10 @@ function hug_request(target_url, target_function, method, qs_contents) {
   let api_host = '';
   if (target_url === 'HUG') {
     // Change this to your own HUG REST API server (if you want)
-    api_host = `https://prod.domain.tld`;
+    api_host = hug_host;
   } else if (target_url === 'NN') {
     // Change this to the ML model URL
-    api_host = `https://nn.domain.tld`;
+    api_host = hug_nn_host;
   }
 
   let request_options = {
@@ -476,7 +475,7 @@ app.intent('Welcome', conv => {
   welcome_param['placeholder'] = 'placeholder'; // We need this placeholder
   conv.contexts.set('home', 1, welcome_param); // We need to insert data into the 'home' context for the home fallback to trigger!
 
-  const userId = parse_userId(conv);
+  parse_userId(conv); // Will attempt to register the user
 
   const MENU_FALLBACK = [
     "Sorry, what do you want to do?",
@@ -1204,7 +1203,7 @@ app.intent('getGoat', (conv, { movieGenre }) => {
       let textToSpeech;
       let textToDisplay;
 
-      if (movie_genres_parameter_data.length > 0) {
+      if (movie_genres_string.length > 1) {
         textToSpeech = `<speak>` +
           `I'm sorry, Vote Goat was unable to find any movies with the genres ${movie_genres_comma_separated_string}. <break time="0.35s" /> ` +
           `What do you want to do next?<break time="0.25s" /> Rank Movies<break time="0.175s" />, get a Movie Recommendation<break time="0.175s" />, view your stats<break time="0.175s" />, get help<break time="0.175s" /> or quit? <break time="0.25s" />` +
@@ -1537,31 +1536,22 @@ app.intent('dislikeRecommendations', (conv) => {
         let movie_element = conv.contexts.get('list_body', string_iterator).value;
         let movie_imdb_id = movie_element.imdbID;
 
-        // TODO: Migrate the following GET request to the hug_request function!
-        const options = {
-          url: `${hug_host}/submit_movie_rating`,
-          method: 'POST', // POST request, not GET.
-          json: true,
-          headers: {
-            'User-Agent': 'Vote Goat Bot',
-            "Content-Type": "application/json"
-          },
-          form: { // form because this is a post action
-            gg_id: userId, // Anonymous google id
-            movie_id: movie_imdb_id, // Passing the movie ID acquired via context
-            rating: 0, // The rating we're setting for the movie we just displayed to the user.
-            mode: 'multi vote',
-            api_key: 'API_KEY'
-          }
+        const option = {
+          //  HUG REST GET request parameters
+          gg_id: userId, // Anonymous google id
+          movie_id: movie_imdb_id, // Passing the movie ID acquired via context
+          rating: 0, // The rating we're setting for the movie we just displayed to the user.
+          mode: 'multi vote',
+          api_key: 'API_KEY'
         };
-        requestLib(options, (err, httpResponse, body) => {
-          if (!err && httpResponse.statusCode == 200) { // Check that the GET request didn't encounter any issues!
-            console.log(`mass downvote!`);
-          } else {
-            console.log('An error was encountered in downvote function');
-            small_error_encountered(app); // Minor failure handling
-          }
-        })
+
+        return hug_request('HUG', 'submit_movie_rating', 'POST', option)
+        .then(() => {
+          console.log(`mass downvote!`);
+        }) // END of the GET request!
+        .catch(error_message => {
+          return catch_error(conv, error_message, 'submit_movie_rating');
+        });
       }
     } // End of loop
 
@@ -1674,98 +1664,88 @@ app.intent('itemSelected', (conv, input, option) => {
 
     const userId = parse_userId(conv);
 
-    // TODO: Migrate the following to use the 'hug_request' function!
     const options = {
-      url: `${hug_host}/log_clicked_item`,
-      method: 'POST', // POST request, not GET.
-      json: true,
-      headers: {
-        'User-Agent': 'Vote Goat Bot',
-        "Content-Type": "application/json"
-      },
-      form: { // form because this is a post action
-        gg_id: userId, // Anonymous google id
-        k_mov_ts: movie_element.k_mov_ts,
-        clicked_movie: movie_element.imdbID, // Passing the movie ID acquired via context
-        api_key: 'API_KEY'
-      }
+      //  HUG REST GET request parameters
+      gg_id: userId, // Anonymous google id
+      k_mov_ts: movie_element.k_mov_ts,
+      clicked_movie: movie_element.imdbID, // Passing the movie ID acquired via context
+      api_key: 'API_KEY'
     };
 
-    requestLib(options, (err, httpResponse, body) => {
-      if (!err && httpResponse.statusCode == 200) { // Check that the GET request didn't encounter any issues!
-        console.log('Successfully posted the clicked item to hug/mongodb!');
-      } else {
-        console.log('An error was encountered in the itemSelected (POST) function');
-        small_error_encountered(app); // Minor failure handling
-      }
-    })
+    return hug_request('HUG', 'log_clicked_item', 'POST', options)
+    .then(() => {
+      console.log('Successfully posted the clicked item to hug/mongodb!');
 
-    conv.contexts.get('recommend_movie_context', 0, { // Duration 0 to erase the context!
-      "placeholder": "placeholder",
-      "repeatedRichResponse": "", // Erasing context!
-      "repeatedCarousel": "" // Erasing context!
-    });
+      conv.contexts.get('recommend_movie_context', 0, { // Duration 0 to erase the context!
+        "placeholder": "placeholder",
+        "repeatedRichResponse": "", // Erasing context!
+        "repeatedCarousel": "" // Erasing context!
+      });
 
-    conv.contexts.get('item_selected_context', 1, { // Placeholder to initialize/trigger the 'item_selected_context' context.
-      "placeholder": "placeholder"
-    });
+      conv.contexts.get('item_selected_context', 1, { // Placeholder to initialize/trigger the 'item_selected_context' context.
+        "placeholder": "placeholder"
+      });
 
-    let title_let = (movie_element.title).replace('&', 'and'); // & characters invalidate SSML
-    //let plot_let = (movie_element.plot).replace('&', 'and'); // & characters invalidate SSML
+      let title_let = (movie_element.title).replace('&', 'and'); // & characters invalidate SSML
+      //let plot_let = (movie_element.plot).replace('&', 'and'); // & characters invalidate SSML
 
-    conv.contexts.get('vote_context', 1, { // Setting the mode for upvote/downvote to detect where we are!
-      "mode": 'list_selection', // Setting the mode for upvote/downvote to detect where we are!
-      "movie": `${movie_element.imdbID}`, // Setting the displayed movie's imdbID into the voting context!
-      "title": `${movie_element.title}`, // Setting the displayed movie's imdbID into the voting context!
-      "plot": `${movie_element.plot}`, // Getting the plot from the selected movie
-      "year": `${movie_element.year}` // Placing the year value into the voting context!
-    });
+      conv.contexts.get('vote_context', 1, { // Setting the mode for upvote/downvote to detect where we are!
+        "mode": 'list_selection', // Setting the mode for upvote/downvote to detect where we are!
+        "movie": `${movie_element.imdbID}`, // Setting the displayed movie's imdbID into the voting context!
+        "title": `${movie_element.title}`, // Setting the displayed movie's imdbID into the voting context!
+        "plot": `${movie_element.plot}`, // Getting the plot from the selected movie
+        "year": `${movie_element.year}` // Placing the year value into the voting context!
+      });
 
-    const genre_list = helpExtract(movie_element.genres);
-    const actor_list = helpExtract(movie_element.actors);
-    const director_list = helpExtract(movie_element.director);
+      const genre_list = helpExtract(movie_element.genres);
+      const actor_list = helpExtract(movie_element.actors);
+      const director_list = helpExtract(movie_element.director);
 
-    const textToSpeech1 = `<speak>` +
-      `"${title_let}" is a ${genre_list} movie, with a cast primarily comprised of ${actor_list}. <break time="0.35s" />` +
-      `It was released in ${movie_element.year}, directed by ${director_list} and has an IMDB rating of ${movie_element.imdbRating} out of 10. <break time="0.35s" /> ` +
-      `Are you interested in watching "${title_let}"?` +
-      `</speak>`;
+      const textToSpeech1 = `<speak>` +
+        `"${title_let}" is a ${genre_list} movie, with a cast primarily comprised of ${actor_list}. <break time="0.35s" />` +
+        `It was released in ${movie_element.year}, directed by ${director_list} and has an IMDB rating of ${movie_element.imdbRating} out of 10. <break time="0.35s" /> ` +
+        `Are you interested in watching "${title_let}"?` +
+        `</speak>`;
 
-    const textToDisplay1 = `Title: ${title_let}\n` +
-    `Genre: ${title_let}\n` +
-    `Director: ${title_let}\n` +
-    `IMDB Rating: ${title_let}\n` +
-    `Title: ${title_let}\n` +
-    `Title: ${title_let}`;
+      const textToDisplay1 = `Title: ${title_let}\n` +
+      `Genre: ${title_let}\n` +
+      `Director: ${title_let}\n` +
+      `IMDB Rating: ${title_let}\n` +
+      `Title: ${title_let}\n` +
+      `Title: ${title_let}`;
 
-    conv.ask(
-      new SimpleResponse({
-        // Sending the details to the user
-        speech: textToSpeech1,
-        text: textToDisplay1
-      })
-    );
-
-    const hasScreen = conv.surface.capabilities.has('actions.capability.SCREEN_OUTPUT');
-
-    if (hasScreen === true) {
       conv.ask(
-        new BasicCard({
-          title: `${movie_element.title} (${movie_element.year})`,
-          text: `Plot: ${movie_element.plot}`,
-          buttons: new Button({
-            title: `🍿 Google Play Search`,
-            url: `https://play.google.com/store/search?q=${movie_element.title}&c=movies`,
-          }),
-          image: { // Mostly, you can provide just the raw API objects
-            url: `${movie_element.poster_url}`,
-            accessibilityText: `${movie_element.title}`,
-          },
-          display: 'WHITE'
-        }),
-        new Suggestions(`👍`, `👎`, `📜 plot spoilers`, '🗳 Rank Movies', '🏆 Show Stats', '📑 Help', `🚪 Back`)
+        new SimpleResponse({
+          // Sending the details to the user
+          speech: textToSpeech1,
+          text: textToDisplay1
+        })
       );
-    }
+
+      const hasScreen = conv.surface.capabilities.has('actions.capability.SCREEN_OUTPUT');
+
+      if (hasScreen === true) {
+        conv.ask(
+          new BasicCard({
+            title: `${movie_element.title} (${movie_element.year})`,
+            text: `Plot: ${movie_element.plot}`,
+            buttons: new Button({
+              title: `🍿 Google Play Search`,
+              url: `https://play.google.com/store/search?q=${movie_element.title}&c=movies`,
+            }),
+            image: { // Mostly, you can provide just the raw API objects
+              url: `${movie_element.poster_url}`,
+              accessibilityText: `${movie_element.title}`,
+            },
+            display: 'WHITE'
+          }),
+          new Suggestions(`👍`, `👎`, `📜 plot spoilers`, '🗳 Rank Movies', '🏆 Show Stats', '📑 Help', `🚪 Back`)
+        );
+      }
+    }) // END of the GET request!
+    .catch(error_message => {
+      return catch_error(conv, error_message, 'recommendation');
+    });
   } else {
     // Shouldn't happen, but better safe than sorry!
     conv.redirect.intent('handle_no_contexts'); // Redirect to 'handle_no_contexts' intent.
@@ -1991,7 +1971,7 @@ app.intent('goodbye', conv => {
     `Sorry to see you go, come back soon? <break time="0.35s" /> ` +
     `Goodbye.` +
     `</speak>`;
-  const speechToText = `Sorry to see you go, come back soon? \n\n` +
+  const textToDisplay = `Sorry to see you go, come back soon? \n\n` +
     `Goodbye.`;
 
   chatbase_analytics(
@@ -2006,7 +1986,7 @@ app.intent('goodbye', conv => {
     new SimpleResponse({
       // Sending the details to the user
       speech: textToSpeech,
-      text: displayText
+      text: textToDisplay
     })
   );
 });
