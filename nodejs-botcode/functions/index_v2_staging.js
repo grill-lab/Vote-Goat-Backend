@@ -5,7 +5,7 @@
 const { dialogflow, Suggestions, BasicCard, Button, BrowseCarousel,  BrowseCarouselItem, Image, SimpleResponse } = require('actions-on-google');
 const functions = require('firebase-functions'); // Mandatory when using firebase
 const requestLib = require('request'); // Used for querying the HUG.REST API
-const util = require('util');
+//const util = require('util'); // Used for debugging conv
 
 let chatbase = require('@google/chatbase')
               .setApiKey('chatbase-api-key') // Your Chatbase API Key
@@ -36,7 +36,7 @@ function catch_error(conv, error_message, intent) {
   } else {
       console.error(new Error(error_message));
   }
-  conv.user.storage = {};
+
   return conv.close(
       new SimpleResponse({
       // If we somehow fail, do so gracefully!
@@ -165,15 +165,22 @@ function forward_contexts (conv, intent_name, inbound_context_name, outbound_con
   }
 }
 
-function repeat_response_store (conv, speech, text, intent_name, intent_context) {
+function store_repeat_response (conv, intent_name, speech, text) {
   /*
     A function for easily storing the response data.
-    Takes in the speech, text, intent name & list of fallback strings.
+    Takes in the speech & text previously presented to the user.
   */
+  conv.data.last_intent_name = intent_name;
   conv.data.last_intent_prompt_speech = speech;
   conv.data.last_intent_prompt_text = text;
-  conv.data.last_intent_name = intent_name;
-  conv.data.last_intent_context = intent_context;
+}
+
+function store_fallback_response (conv, fallback_messages) {
+  /*
+    Function for storing fallback messages in the conv data storage.
+  */
+  conv.data.fallback_text = fallback_messages[conv.data.fallbackCount];
+  conv.data.fallback_speech = '<speak>' + fallback_messages[conv.data.fallbackCount] + '</speak>';
 }
 
 ////////////// UserId related:
@@ -399,7 +406,7 @@ function genericFallback(conv, intent_name, fallback_messages, suggestions) {
   console.warn("GENERIC FALLBACK TRIGGERED!");
   const fallback_name = intent_name + '_Fallback';
 
-  console.log(util.inspect(conv, false, null));
+  //console.log(util.inspect(conv, false, null)); // EPIC DEBUG!
 
   //console.log(`Generic fallback count: ${conv.data.fallbackCount}`);
 
@@ -423,6 +430,8 @@ function genericFallback(conv, intent_name, fallback_messages, suggestions) {
     const fallback_speech = '<speak>' + current_fallback_phrase + '</speak>';
     const fallback_text = current_fallback_phrase;
 
+    store_repeat_response(conv, fallback_name, fallback_speech, fallback_text); // Enabling the user to repeat the fallback text...
+
     //console.log(`${conv.data.fallbackCount} ${fallback_name} ${fallback_messages} : ${current_fallback_phrase} : ${fallback_speech}`);
     chatbase_analytics(
       conv,
@@ -432,7 +441,7 @@ function genericFallback(conv, intent_name, fallback_messages, suggestions) {
     );
 
     const hasScreen = conv.surface.capabilities.has('actions.capability.SCREEN_OUTPUT');
-    if (hasScreen === true) {
+    if (hasScreen === true && suggestions.length > 1) {
       // TODO: Change the buttons to reflect the previous intent
       return conv.ask(
         new SimpleResponse({
@@ -471,17 +480,21 @@ app.intent('Welcome', conv => {
   */
   conv.data.fallbackCount = 0;
 
+  /*
   const welcome_param = {}; // The dict which will hold our parameter data
   welcome_param['placeholder'] = 'placeholder'; // We need this placeholder
   conv.contexts.set('home', 1, welcome_param); // We need to insert data into the 'home' context for the home fallback to trigger!
+  */
 
   parse_userId(conv); // Will attempt to register the user
 
-  const MENU_FALLBACK = [
+  const fallback_messages = [
     "Sorry, what do you want to do?",
     "I didn't catch that. Do you want to rank movies, receive movie recommendations, view your leaderboard position or get help using Vote Goat?",
     "I'm having difficulties understanding what you want to do with Vote Goat. Do you want to rank movies, receive personalized movie recommendations, view your Vote Goat leaderboard position or learn how to use Vote Goat?"
   ];
+
+  store_fallback_response(conv, 'Welcome', 'home', fallback_messages);
 
   //if (conv.contexts.Welcome) {
     //const test = conv.contexts['Welcome'].value;
@@ -513,6 +526,8 @@ app.intent('Welcome', conv => {
                         `🏆 View your stats? \n\n ` +
                         `🐐 View GOAT movies? \n\n ` +
                         `📑 Or do you need help?`;
+
+  store_repeat_response(conv, 'Welcome', textToSpeech, textToDisplay); // Storing repeat info
 
   chatbase_analytics(
     conv,
@@ -625,16 +640,20 @@ app.intent('Training', (conv, { movieGenre }) => {
     if (body.valid_key === true) {
       const hasScreen = conv.surface.capabilities.has('actions.capability.SCREEN_OUTPUT');
 
-      const intent_fallback_messages = [
+      const fallback_messages = [
         "Sorry, what do you want to do next?",
         "I didn't catch that. Do you want A, B or C?",
         "I'm having difficulties understanding what you want to do with Vote Goat. Do you want A, B or C?"
       ];
 
+      store_fallback_response(conv, fallback_messages);
+
       if (body.success === true) {
-        // Triggers if a movie was found.
-        // Retrieving data from the 'get_single_training_movie' JSON request result
-        // const moviePlot = body.plot;
+        /*
+          Triggers if a movie was found.
+          Retrieving data from the 'get_single_training_movie' JSON request result
+          const moviePlot = body.plot;
+        */
         const plot = (body.plot).replace('&', 'and');
         const year = body.year;
         const posterURL = body.poster_url;
@@ -642,34 +661,6 @@ app.intent('Training', (conv, { movieGenre }) => {
         const imdbRating = body.imdbRating;
         const movieID = body.imdbID;
 
-        /*
-        let genres = body.genres; // NOT CONST! Because we want to potentially edit the last element to 'and genre'
-        if (Array.isArray(genres)) {
-          const quantity_genres = genres.length; // Quantity of genres in the genre array
-          if (quantity_genres > 1) { // More than one genre? Engage!
-            genres[quantity_genres - 1] = 'and ' + genres[quantity_genres - 1]; // We're setting the last actor array element to 'and <actor>'
-          }
-        }
-        const genre_list = (genres.join(', ')).replace(', and', ' and'); // Merge into a string, optimize gramar.
-
-        let actors = body.actors; // NOT CONST! Because we want to potentially edit the last element to 'and actorname'
-        if (Array.isArray(actors)) {
-          const quantity_actors = actors.length; // Quantity of actors in the actor array
-          if (quantity_actors > 1) { // More than one actor? Engage!
-            actors[quantity_actors - 1] = 'and ' + actors[quantity_actors - 1]; // We're setting the last actor array element to 'and <actor>'
-          }
-        }
-        const actor_list = (actors.join(', ')).replace(', and', ' and'); // Merge into a string, optimize gramar.
-
-        let directors = body.director;
-        if (Array.isArray(directors)) {
-          const quantity_directors = directors.length;
-          if (quantity_directors > 1) { // More than one director? Engage!
-            directors[quantity_directors - 1] = 'and ' + directors[quantity_directors - 1]; // We're setting the last director array element to 'and <director>'
-          }
-        }
-        const director_list = (directors.join(', ')).replace(', and', ' and'); // Merge into a string, optimize gramar.
-        */
         const genre_list = helpExtract(body.genres);
         const actor_list = helpExtract(body.actors);
         const director_list = helpExtract(body.director);
@@ -705,6 +696,8 @@ app.intent('Training', (conv, { movieGenre }) => {
             `The cast of ${movieTitle} is primarily comprised of ${actor_list}. \n\n` +
             genre_text +
             `Would you watch ${movieTitle}?`;
+
+        store_repeat_response(conv, 'Training', textToSpeech, textToDisplay); // Storing repeat info
 
         conv.ask(
           new SimpleResponse({
@@ -797,11 +790,13 @@ app.intent('moreMovieInfo', (conv) => {
     //const movie_year = conv.contexts.get('vote_context', 'year').value; // Retrieving the plot
     let movie_plot = conv.contexts.get('vote_context', 'plot').value; // Retrieving the plot
 
-    const intent_fallback_messages = [
+    const fallback_messages = [
       `Sorry, what was that?`,
       `Sorry, I didn't catch that, would you watch ${movie_title}?`,
       `I'm sorry, I didn't understand that. Would you cosider watching ${movie_title}?`
     ];
+
+    store_fallback_response(conv, fallback_messages);
 
     let intro_text = `Warning! ${movie_title} plot spoilers! `;
     let confirmation_text = `Would you watch "${movie_title}"?`;
@@ -830,6 +825,8 @@ app.intent('moreMovieInfo', (conv) => {
 
     const textToDisplay = `⚠️ Warning! "${movie_title}" plot spoilers! 🙉 \n\n` +
       `"${movie_plot}"`;
+
+    store_repeat_response(conv, 'moreMovieInfo', textToSpeech, textToDisplay); // Storing repeat info
 
     conv.ask(
       new SimpleResponse({
@@ -863,11 +860,13 @@ app.intent('voted', (conv, { voting }) => {
   */
   const movie_title = conv.contexts.get('vote_context', 'title').value; // Retrieving the expected voting mode (within a list, or during training)!
 
-  const intent_fallback_messages = [
+  const fallback_messages = [
     `Sorry, what was that?`,
     `Sorry, I didn't catch that, would you watch ${movie_title}?`,
     `I'm sorry, I didn't understand that. Would you cosider watching ${movie_title}?`
   ];
+
+  store_fallback_response(conv, fallback_messages);
 
   if (conv.contexts.get('vote_context', 'mode')) {
     const userId = parse_userId(conv);
@@ -955,7 +954,7 @@ app.intent('voted', (conv, { voting }) => {
           We want to provide them an appropriate response & prompt them for the next step.
           */
           let textToSpeech;
-          let speechToText;
+          let textToDisplay;
 
           // TODO: Make the following less verbose? Perhaps based on recent usage levels.
 
@@ -966,7 +965,7 @@ app.intent('voted', (conv, { voting }) => {
               `Try looking for ${movie_title} on YouTube or the Google Play store. <break time="0.5s" /> ` +
               `What do you want to do next? Rank movies, get another movie recommendation or quit?` +
               `</speak>`;
-            speechToText = `Huzzah, a successful movie recommendation! \n\n` +
+            textToDisplay = `Huzzah, a successful movie recommendation! \n\n` +
               `Try looking for ${movie_title} on YouTube or the Google Play store. \n\n` +
               `What do you want to do next? Rank movies, get another movie recommendation or quit?`;
           } else {
@@ -977,7 +976,7 @@ app.intent('voted', (conv, { voting }) => {
               `Try ranking more movies to improve your future recommendations. <break time="0.5s" /> ` +
               `What do you want to do next? Rank movies, view your stats, get help or quit?` +
               `</speak>`;
-            speechToText = `Sorry about that. \n\n` +
+            textToDisplay = `Sorry about that. \n\n` +
               `Try ranking more movies to improve future recommendations. \n\n` +
               `What do you want to do next? Rank movies, view your stats, get help or quit?`;
           }
@@ -987,10 +986,12 @@ app.intent('voted', (conv, { voting }) => {
             'voting_intention': voting_intention
           });
 
+          store_repeat_response(conv, 'voted', textToSpeech, textToDisplay); // Storing repeat info
+
           conv.ask(
             new SimpleResponse({
               speech: textToSpeech,
-              text: speechToText
+              text: textToDisplay
             })
           );
 
@@ -1174,6 +1175,8 @@ app.intent('getGoat', (conv, { movieGenre }) => {
           `3rd place is ${body[2].title}, released in ${body[2].year}.`;
         }
 
+        store_repeat_response(conv, 'getGoat', textToSpeech, textToDisplay); // Storing repeat info
+
         conv.ask(
           new SimpleResponse({
             speech: textToSpeech,
@@ -1251,11 +1254,13 @@ app.intent('getLeaderboard', conv => {
     We want to gamify the bot, so that we encourage people to vote as much as possible.
     The more voting data we have, the better recommendations we can provide to everyone!
   */
-  const intent_fallback_messages = [
+  const fallback_messages = [
     "Sorry, what do you want to do next?",
     "I didn't catch that. Do you want to rank movies, receive movie recommendations, view your leaderboard position or get help using Vote Goat?",
     "I'm having difficulties understanding what you want to do with Vote Goat. Do you want to rank movies, receive personalized movie recommendations, view your Vote Goat leaderboard position or learn how to use Vote Goat?"
   ];
+
+  store_fallback_response(conv, fallback_messages);
 
   const userId = parse_userId(conv);
 
@@ -1293,6 +1298,8 @@ app.intent('getLeaderboard', conv => {
         textToDisplay = `You've yet to rank any movies; please rank some movies, the more you vote the better the movie recommendations we can create. ` +
           `What do you want to do next? Rank Movies, or get help using Vote Goat? <break time="0.25s" /> `;
       }
+
+      store_repeat_response(conv, 'getLeaderboard', textToSpeech, textToDisplay); // Storing repeat info
 
       conv.ask(
         new SimpleResponse({
@@ -1471,6 +1478,8 @@ app.intent('recommendMovie', (conv) => {
                                     `${rec_body[1].title}? ` +
                                     `${rec_body[2].title}? `;
 
+              store_repeat_response(conv, 'recommendMovie', textToSpeech, textToDisplay); // Storing repeat info
+
               conv.ask(
                 new SimpleResponse({
                   speech: textToSpeech,
@@ -1556,7 +1565,7 @@ app.intent('dislikeRecommendations', (conv) => {
     } // End of loop
 
     let textToSpeech;
-    let speechToText;
+    let textToDisplay;
 
     if (hasScreen === true) {
       // Device has a screen
@@ -1565,7 +1574,7 @@ app.intent('dislikeRecommendations', (conv) => {
         `Please try ranking more movies to improve future recommendations. <break time="0.5s" /> ` +
         `What do you want to do next? Rank movies, view your stats, get help or quit?` +
         `</speak>`;
-      speechToText = `Sorry for providing poor movie recommendations. \n\n` +
+      textToDisplay = `Sorry for providing poor movie recommendations. \n\n` +
         `Please try ranking more movies to improve future recommendations. \n\n` +
         `What do you want to do next? Rank movies, view your stats, get help or quit?`;
     } else {
@@ -1575,16 +1584,18 @@ app.intent('dislikeRecommendations', (conv) => {
         `Please try ranking more movies to improve future recommendations. <break time="0.5s" /> ` +
         `What do you want to do next? Rank movies, view your stats, get help or quit?` +
         `</speak>`;
-      speechToText = `Sorry for providing poor movie recommendations.` +
+      textToDisplay = `Sorry for providing poor movie recommendations.` +
         `Please try ranking more movies to improve future recommendations.` +
         `What do you want to do next? Rank movies, view your stats or quit?`;
     }
+
+    store_repeat_response(conv, 'dislikeRecommendations', textToSpeech, textToDisplay); // Storing repeat info
 
     conv.ask(
       new SimpleResponse({
         // Sending the details to the user
         speech: textToSpeech,
-        text: speechToText
+        text: textToDisplay
       })
     );
 
@@ -1613,9 +1624,6 @@ app.intent('itemSelected', (conv, input, option) => {
   Related: https://developers.google.com/actions/assistant/helpers#getting_the_results_of_the_helper_1
   Get & compare the user's selections to each of the item's keys
   The param is set to the index when looping over the results to create the addItems contents.
-
-  // RICKY NOTE: NOT COMPLETE!
-
   */
   if (conv.contexts.get('list_body', '0')) {
     //console.log("INSIDE: itemSelected");
@@ -1701,24 +1709,26 @@ app.intent('itemSelected', (conv, input, option) => {
       const actor_list = helpExtract(movie_element.actors);
       const director_list = helpExtract(movie_element.director);
 
-      const textToSpeech1 = `<speak>` +
+      const textToSpeech = `<speak>` +
         `"${title_let}" is a ${genre_list} movie, with a cast primarily comprised of ${actor_list}. <break time="0.35s" />` +
         `It was released in ${movie_element.year}, directed by ${director_list} and has an IMDB rating of ${movie_element.imdbRating} out of 10. <break time="0.35s" /> ` +
         `Are you interested in watching "${title_let}"?` +
         `</speak>`;
 
-      const textToDisplay1 = `Title: ${title_let}\n` +
+      const textToDisplay = `Title: ${title_let}\n` +
       `Genre: ${title_let}\n` +
       `Director: ${title_let}\n` +
       `IMDB Rating: ${title_let}\n` +
       `Title: ${title_let}\n` +
       `Title: ${title_let}`;
 
+      store_repeat_response(conv, 'itemSelected', textToSpeech, textToDisplay); // Storing repeat info
+
       conv.ask(
         new SimpleResponse({
           // Sending the details to the user
-          speech: textToSpeech1,
-          text: textToDisplay1
+          speech: textToSpeech,
+          text: textToDisplay
         })
       );
 
@@ -1757,14 +1767,14 @@ app.intent('input.unknown', conv => {
   Fallback used when the Google Assistant doesn't understand which intent the user wants to go to.
   */
   console.log("Unknown intent fallback triggered!");
-  //conv.data.fallbackCount = 0;
+
   const intent_fallback_messages = [
     "Sorry, what was that?",
     "I didn't catch that. What do you want to do in Vote Goat??",
     "I'm having trouble understanding. Want to rank movies or get movie recommendations?"
   ];
 
-  const suggestions = ['🗳 Rank Movies', '🤔 Movie Recommendation', '🏆 Show Stats', `🐐 GOAT Movies`, '📑 Help', `🚪 Quit`]
+  const suggestions = ['🗳 Rank Movies', '🤔 Movie Recommendation', '🏆 Show Stats', `🐐 GOAT Movies`, '📑 Help', `🚪 Quit`];
 
   return genericFallback(conv, `bot.fallback`, intent_fallback_messages, suggestions);
 });
@@ -1806,7 +1816,7 @@ app.intent('listFallback', (conv) => {
     const current_fallback_value = parseInt(conv.data.fallbackCount, 10); // Retrieve the value of the intent's fallback counter
     conv.data.fallbackCount++; // Iterate the fallback counter
 
-    if (current_fallback_value > 3) {
+    if (current_fallback_value >= 2) {
       // The user failed too many times
       conv.close("Unfortunately, Vote Goat was unable to understand user input. Sorry for the inconvenience, let's try again later though? Goodbye.");
     } else {
@@ -1816,10 +1826,15 @@ app.intent('listFallback', (conv) => {
       forward_contexts(conv, 'carousel_fallback', 'recommendation_context', 'recommendation_context');
       forward_contexts(conv, 'carousel_fallback', 'list_body', 'list_body');
 
+      const textToSpeech = `<speak>${CAROUSEL_FALLBACK_DATA[current_fallback_value]}</speak>`;
+      const textToDisplay = CAROUSEL_FALLBACK_DATA[current_fallback_value];
+
+      store_repeat_response(conv, 'listFallback', textToSpeech, textToDisplay); // Storing repeat info
+
       conv.ask(
         new SimpleResponse({
-          speech: `<speak>${CAROUSEL_FALLBACK_DATA[current_fallback_value]}</speak>`,
-          text: CAROUSEL_FALLBACK_DATA[current_fallback_value]
+          speech: textToSpeech,
+          text: textToDisplay
         }),
         new BrowseCarousel({
           items: carousel
@@ -1846,11 +1861,13 @@ app.intent('handle_no_contexts', conv => {
   */
   conv.user.storage.fallbackCount = 0; // Required for tracking fallback attempts!
 
-  const intent_fallback_messages = [
+  const fallback_messages = [
     "Sorry, what do you want to do next?",
     "I didn't catch that. Do you want to rank movies, receive movie recommendations, view your leaderboard position or discover the GOAT movies?",
     "I'm having difficulties understanding what you want to do with Vote Goat. Do you want to rank movies, receive personalized movie recommendations, view your Vote Goat leaderboard position or discover the greatest movies of all time?"
   ];
+
+  store_fallback_response(conv, fallback_messages);
 
   const textToSpeech = `<speak>` +
     `Sorry, you've taken the wrong turn. <break time="0.5s" /> ` +
@@ -1869,6 +1886,8 @@ app.intent('handle_no_contexts', conv => {
                `🏆 View your stats? \n\n ` +
                `🐐 View GOAT movies? \n\n ` +
                `📑 Or do you need help?`;
+
+  store_repeat_response(conv, 'handle_no_contexts', textToSpeech, textToDisplay); // Storing repeat info
 
   conv.ask(
     new SimpleResponse({
@@ -1900,11 +1919,13 @@ app.intent('getHelpAnywhere', conv => {
   help_anywhere_parameter['placeholder'] = 'placeholder'; // We need this placeholder
   conv.contexts.set('help_anywhere', 1, help_anywhere_parameter); // We need to insert data into the 'home' context for the home fallback to trigger!
 
-  const intent_fallback_messages = [
+  const fallback_messages = [
     "Sorry, what do you want to do next?",
     "I didn't catch that. Do you want to rank movies, receive movie recommendations, view your leaderboard position or discover the GOAT movies?",
     "I'm having difficulties understanding what you want to do with Vote Goat. Do you want to rank movies, receive personalized movie recommendations, view your Vote Goat leaderboard position or discover the greatest movies of all time?"
   ];
+
+  store_fallback_response(conv, fallback_messages);
 
   const textToSpeech = `<speak>` +
     `I heard you're having some problems with Vote Goat? <break time="0.35s" /> ` +
@@ -1929,6 +1950,14 @@ app.intent('getHelpAnywhere', conv => {
   const textToDisplay2 = `When ranking movies, you can ask for plot spoilers. \n\n` +
                `You can specify the genre of movies to rank by saying rank funny scary movies. \n\n` +
                `What do you want to do next? Rank Movies, or get a Movie Recommendation?`;
+
+  /*
+    Storing repeat info.
+    Only repeating the first section for now!
+    TODO: Simplify the help text, or repeat the second text string?
+    TODO: Improve granularity of
+  */
+  store_repeat_response(conv, 'getHelpAnywhere', textToSpeech, textToDisplay);
 
   conv.ask(
     new SimpleResponse({
@@ -1996,7 +2025,6 @@ app.catch((conv, error_message) => {
     Generic error catch
   */
   console.error(error_message);
-  conv.user.storage = {};
   return catch_error(conv, error_message, 'Worker.One');
 });
 
