@@ -175,12 +175,21 @@ function store_repeat_response (conv, intent_name, speech, text) {
   conv.data.last_intent_prompt_text = text;
 }
 
-function store_fallback_response (conv, fallback_messages) {
+function store_fallback_response (conv, fallback_messages, suggestions) {
   /*
     Function for storing fallback messages in the conv data storage.
   */
-  conv.data.fallback_text = fallback_messages[conv.data.fallbackCount];
-  conv.data.fallback_speech = '<speak>' + fallback_messages[conv.data.fallbackCount] + '</speak>';
+  // 1st fallback
+  conv.data.fallback_text_0 = fallback_messages[0];
+  conv.data.fallback_speech_0 = '<speak>' + fallback_messages[0] + '</speak>';
+  // 2nd fallback
+  conv.data.fallback_text_1 = fallback_messages[1];
+  conv.data.fallback_speech_1 = '<speak>' + fallback_messages[1] + '</speak>';
+  // NOTE: No 3rd fallback - we will quit!
+
+  // Storing the comma separated suggestion string in conv data
+  const suggestion_string = parse_parameter_list(suggestions, ','); // parse movieGenre dialogflow parameter input
+  conv.data.suggestions = suggestion_string;
 }
 
 ////////////// UserId related:
@@ -244,12 +253,12 @@ function register_userId (conv, user_id_string) {
     const user_existed = body.user_existed;
     const created_user = body.created_user;
 
-    if (user_existed == false && created_user == true) {
+    if (user_existed === false && created_user === true) {
       /*
         UserId successfully registered on MongoDB
       */
       console.log("Account created!");
-    } else if (user_existed == true && created_user == false) {
+    } else if (user_existed === true && created_user === false) {
       /*
         The UserId was unseen on the mobile device, but already registered on MongoDB.
         Possible that the user wiped their user storage whilst maintaining their UserId.
@@ -406,14 +415,14 @@ function genericFallback(conv, intent_name, fallback_messages, suggestions) {
   console.warn("GENERIC FALLBACK TRIGGERED!");
   const fallback_name = intent_name + '_Fallback';
 
-  //console.log(util.inspect(conv, false, null)); // EPIC DEBUG!
+  //console.log(util.inspect(conv, false, null)); // DEBUG function!
 
   //console.log(`Generic fallback count: ${conv.data.fallbackCount}`);
 
   conv.data.fallbackCount = parseInt(conv.data.fallbackCount, 10); // Retrieve the value of the intent's fallback counter
 
-  if (conv.data.fallbackCount >= 3) {
-    // Google best practice is to quit after 3 attempts
+  if (conv.data.fallbackCount >= 2) {
+    // Google best practice is to quit upon the 3rd attempt
     console.log("User misunderstood 3 times, quitting!");
     chatbase_analytics(
       conv,
@@ -424,11 +433,15 @@ function genericFallback(conv, intent_name, fallback_messages, suggestions) {
     return conv.close("Unfortunately, Vote Goat was unable to understand user input. Sorry for the inconvenience, let's try again later though? Goodbye.");
   } else {
     // Within fallback attempt limit (<3)
-    console.log("HANDLED FALLBACK!");
-    const current_fallback_phrase = fallback_messages[conv.data.fallbackCount];
+    //console.log("HANDLED FALLBACK!");
     conv.data.fallbackCount++; // Iterate the fallback counter
-    const fallback_speech = '<speak>' + current_fallback_phrase + '</speak>';
-    const fallback_text = current_fallback_phrase;
+
+    const text_target = 'fallback_text_' + (conv.data.fallbackCount).toString();
+    const speech_target = 'fallback_speech_' + (conv.data.fallbackCount).toString();
+
+    // 1st fallback
+    const fallback_text = conv.data[text_target];
+    const fallback_speech = conv.data[speech_target];
 
     store_repeat_response(conv, fallback_name, fallback_speech, fallback_text); // Enabling the user to repeat the fallback text...
 
@@ -493,8 +506,9 @@ app.intent('Welcome', conv => {
     "I didn't catch that. Do you want to rank movies, receive movie recommendations, view your leaderboard position or get help using Vote Goat?",
     "I'm having difficulties understanding what you want to do with Vote Goat. Do you want to rank movies, receive personalized movie recommendations, view your Vote Goat leaderboard position or learn how to use Vote Goat?"
   ];
+  const suggestion_chips = ['🗳 Rank Movies', '🤔 Movie Recommendation', '🏆 Show Stats', `🐐 GOAT Movies`, '📑 Help', `🚪 Quit`];
 
-  store_fallback_response(conv, 'Welcome', 'home', fallback_messages);
+  store_fallback_response(conv, 'Welcome', 'home', fallback_messages, suggestion_chips);
 
   //if (conv.contexts.Welcome) {
     //const test = conv.contexts['Welcome'].value;
@@ -545,7 +559,7 @@ app.intent('Welcome', conv => {
 
   const hasScreen = conv.surface.capabilities.has('actions.capability.SCREEN_OUTPUT');
   if (hasScreen === true) {
-    conv.ask(new Suggestions('🗳 Rank Movies', '🤔 Movie Recommendation', '🏆 Show Stats', `🐐 GOAT Movies`, '📑 Help', `🚪 Quit`));
+    conv.ask(new Suggestions(suggestion_chips));
   }
 });
 
@@ -562,69 +576,44 @@ app.intent('Training', (conv, { movieGenre }) => {
 
   const userId = parse_userId(conv);
 
-  let movie_genres_string;
+  var movie_genres_string = parse_parameter_list(movieGenre, ' '); // parse movieGenre dialogflow parameter input
 
-  if (typeof movieGenre !== 'undefined' && (movieGenre.length > 0)) {
-
-    if (Array.isArray(movieGenre)) {
-      // Verifying that the parameter data (which is a list) is stored in an array (workaround)
-      const quantity_genres = movieGenre.length;
-
-      if (quantity_genres > 0) {
-        // Genres are actually present in the user's input
-        movie_genres_string = movieGenre.join(' '); // Merge into a string for GET request
-        conv.contexts.set('forward_genre', 1, { // Setting the 'forward_genre' context for the next loop
-          "placeholder": "placeholder",
-          "movieGenres": movie_genres_string
-        });
-        console.log(`Set "${movie_genres_string}" into 'forward_genre' context!`);
-      } else {
-        /*
-        User didn't provide any genres, but they didn't come from the vote loop!
-        */
-        movie_genres_string = ' ';
-      }
-    }
-  } else {
+  if (movie_genres_string !== ' ') {
     /*
-    The user may have just looped back into the trainBot function after voting, or they've supplied no genre input.
-    We want to retrieve the stored genre loop data!
-    Only triggers upon loop; won't trigger on first run!
+      The user just entered a new movie genre string.
+      Let's store the genres in a context.
+      TODO: Store the genre string in conversational data storage?
     */
-    //console.log(`DID YOU JUST COME FROM A LOOP?!`);
+    conv.contexts.set('forward_genre', 1, { // Setting the 'forward_genre' context for the next loop
+      "placeholder": "placeholder",
+      "movieGenres": movie_genres_string
+    });
+  }
 
-    if (conv.contexts.get('forward_genre_more', 'movieGenres')) {
-      /*
-      We're maintaining the genres the user input.
-      This context will be active if the user came from 'plot spoilers'.
-      */
-      let past_movie_genres_more = conv.contexts.get('forward_genre_more', 'movieGenres').value;
-      //console.log(`TEST: FORWARD_GENRE_MORE EXISTS! ${past_movie_genres_more}`);
-      conv.contexts.set('forward_genre', 1, { // We're now looping the last input genre until the user provides a new set of parameters
-        "placeholder": "placeholder",
-        "movieGenres": past_movie_genres_more
-      });
-      movie_genres_string = past_movie_genres_more;
-    } else if (conv.contexts.get('forward_genre', 'movieGenres')) {
-      /*
-      We're maintaining the genres the user input.
-      This context will be active if the user voted without clicking 'plot spoilers'.
-      */
-      let past_movie_genres = conv.contexts.get('forward_genre', 'movieGenres').value;
-      //console.log(`TEST: FORWARD_GENRE EXISTS! ${past_movie_genres}`);
-      conv.contexts.set('forward_genre', 1, { // We're now looping the last input genre until the user provides a new set of parameters
-        "placeholder": "placeholder",
-        "movieGenres": past_movie_genres
-      });
-      movie_genres_string = past_movie_genres;
-    } else {
-      /*
-       The user came from a loop & they didn't provide movie genres to begin with!
-       Thus, we just set it to blank space (needs blank space for REST API GET request)
-      */
-      console.log(`No input parameter nor past context contents were found, setting the genre  blank!`);
-      movie_genres_string = ' ';
-    }
+  if (movie_genres_string === ' ' && conv.contexts.get('forward_genre_more', 'movieGenres')) {
+    /*
+    We're maintaining the genres the user input.
+    This context will be active if the user came from 'plot spoilers'.
+    */
+    let past_movie_genres_more = conv.contexts.get('forward_genre_more', 'movieGenres').value;
+    //console.log(`TEST: FORWARD_GENRE_MORE EXISTS! ${past_movie_genres_more}`);
+    conv.contexts.set('forward_genre', 1, { // We're now looping the last input genre until the user provides a new set of parameters
+      "placeholder": "placeholder",
+      "movieGenres": past_movie_genres_more
+    });
+    movie_genres_string = past_movie_genres_more;
+  } else if (movie_genres_string === ' ' && conv.contexts.get('forward_genre', 'movieGenres')) {
+    /*
+    We're maintaining the genres the user input.
+    This context will be active if the user came from the 'Training' intent.
+    */
+    let past_movie_genres = conv.contexts.get('forward_genre', 'movieGenres').value;
+    //console.log(`TEST: FORWARD_GENRE EXISTS! ${past_movie_genres}`);
+    conv.contexts.set('forward_genre', 1, { // We're now looping the last input genre until the user provides a new set of parameters
+      "placeholder": "placeholder",
+      "movieGenres": past_movie_genres
+    });
+    movie_genres_string = past_movie_genres;
   }
 
   const qs_input = {
@@ -640,14 +629,6 @@ app.intent('Training', (conv, { movieGenre }) => {
     if (body.valid_key === true) {
       const hasScreen = conv.surface.capabilities.has('actions.capability.SCREEN_OUTPUT');
 
-      const fallback_messages = [
-        "Sorry, what do you want to do next?",
-        "I didn't catch that. Do you want A, B or C?",
-        "I'm having difficulties understanding what you want to do with Vote Goat. Do you want A, B or C?"
-      ];
-
-      store_fallback_response(conv, fallback_messages);
-
       if (body.success === true) {
         /*
           Triggers if a movie was found.
@@ -660,6 +641,16 @@ app.intent('Training', (conv, { movieGenre }) => {
         const movieTitle = (body.title).replace('&', 'and');
         const imdbRating = body.imdbRating;
         const movieID = body.imdbID;
+
+        const fallback_messages = [
+          `Sorry, what was that?`,
+          `Sorry, I didn't catch that, would you watch ${movieTitle}?`,
+          `I'm sorry, I didn't understand that. Would you cosider watching ${movieTitle}?`
+        ];
+
+        // TODO: Reduce 3 fallback messages to 2!
+
+        store_fallback_response(conv, fallback_messages);
 
         const genre_list = helpExtract(body.genres);
         const actor_list = helpExtract(body.actors);
@@ -1032,6 +1023,7 @@ app.intent('getGoat', (conv, { movieGenre }) => {
   const placeholder = {}; // The dict which will hold our parameter data
   placeholder['placeholder'] = 'placeholder'; // We need this placeholder
   app.setContext('home', 1, placeholder); // We need to insert data into the 'home' context for the home fallback to trigger! (Maybe not?..)
+  //TODO: Revisit placeholder context usage
 
   const qs_input = {
     //  HUG REST GET request parameters
@@ -1064,7 +1056,7 @@ app.intent('getGoat', (conv, { movieGenre }) => {
           /*
           We need to account for the length of the genres in the SSML.
           Otherwise, validation will fail!
-          body.length == quantity of movies returned in GOAT list!
+          body.length === quantity of movies returned in GOAT list!
           */
           movie_title_length_limit = Math.floor((640 - 72 - movie_genres_comma_separated_string.length)/body.length);
         } else {
@@ -1766,15 +1758,32 @@ app.intent('input.unknown', conv => {
   /*
   Fallback used when the Google Assistant doesn't understand which intent the user wants to go to.
   */
-  console.log("Unknown intent fallback triggered!");
 
-  const intent_fallback_messages = [
-    "Sorry, what was that?",
-    "I didn't catch that. What do you want to do in Vote Goat??",
-    "I'm having trouble understanding. Want to rank movies or get movie recommendations?"
-  ];
+  var intent_fallback_messages;
+  var suggestions;
 
-  const suggestions = ['🗳 Rank Movies', '🤔 Movie Recommendation', '🏆 Show Stats', `🐐 GOAT Movies`, '📑 Help', `🚪 Quit`];
+  if (conv.data.fallback_text != "") {
+    intent_fallback_messages = conv.data.fallback_text;
+    const suggestion_string = conv.data.suggestions;
+
+    if (suggestion_string != ' ') {
+      // There are suggestion chips to display!
+      suggestions = suggestion_string.split(',');
+    } else {
+      suggestions = []; // No suggestion chips!
+    }
+
+  } else {
+    console.log("Unknown intent fallback triggered!");
+
+    intent_fallback_messages = [
+      "Sorry, what was that?",
+      "I didn't catch that. What do you want to do in Vote Goat??",
+      "I'm having trouble understanding. Want to rank movies or get movie recommendations?"
+    ];
+
+    suggestions = ['🗳 Rank Movies', '🤔 Movie Recommendation', '🏆 Show Stats', `🐐 GOAT Movies`, '📑 Help', `🚪 Quit`];
+  }
 
   return genericFallback(conv, `bot.fallback`, intent_fallback_messages, suggestions);
 });
@@ -2025,7 +2034,7 @@ app.catch((conv, error_message) => {
     Generic error catch
   */
   console.error(error_message);
-  return catch_error(conv, error_message, 'Worker.One');
+  return catch_error(conv, error_message, 'Generic_Error');
 });
 
 exports.VoteGoat = functions.https.onRequest(app);

@@ -22,7 +22,6 @@ app.intent('repeat', conv => {
   const textToSpeech = conv.data.last_intent_prompt_speech; // The last speech bubble
   const textToDisplay = conv.data.last_intent_prompt_text; // The last text displayed
   const intent_name = conv.data.last_intent_name; // The last intent the user was at
-  const intent_context = conv.data.last_intent_context; // The last outbound context name
 
   /*
   TODO: Provide repeat_prefix!
