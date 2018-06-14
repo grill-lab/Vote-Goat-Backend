@@ -11,14 +11,28 @@ function check_recent_activity (conv) {
     const progress_speech = [
       'Keep ranking movies!',
       'Nice one!',
-      'blah',
-      'blah',
-      'blah',
-      'blah',
-      'blah',
-      'blah',
-      'blah',
-      'blah'
+      'Bravo!!!',
+      'Keep it Up !!',
+      'You are the best!!!',
+      'Shoot..!!!',
+      'Do it again.!!!',
+      'Great taste !!!',
+      'I kind of love that!!',
+      'Fair Enough!!!'
+      'Fantastic!!!'
+      'Awesome!!!'
+      'Yay!!'
+      'You got this!'
+      'Looking good!' 
+      'Looking strong!'
+      'Keep it going!'
+      'Almost there!'
+      'You are killing it!'
+      'Way to go! Way to run!'
+      'You have got it in the bag!'
+      'You are a rockstar! '
+      'You are so amazing!'
+      
     ];
 
     const trigger_values = [1, 3, 7, 10, 15, 20, 25, 35, 50, 100]; // TODO: Replace with random number selection? Or better to have fixed progression notifications?
@@ -50,7 +64,11 @@ function check_recent_activity (conv) {
           possible_leaderboard_notifications = [
             `You've taken ${leaderboard_position} place in Vote Goat! Keep on voting!`,
             `Wow, you've voted ${total_user_votes} times, you sure know your movies!`,
-            `Incredible! You've ranked ${total_user_votes} movies, keep it up!`
+            `Incredible! You've ranked ${total_user_votes} movies, keep it up!`,
+            'You are a Star!, You are leading at position ${leaderboard_position}.Keep winning!!!',
+            `That's a job well done!, You ranked ${total_user_votes} movies.You are almost there!!',
+            'You are the best!!!,You ranked ${total_user_votes} movies',            
+            
           ]; // TODO: Add more notifications!
 
           notification_integer = Math.floor(Math.random() * 3); // Random number between 0 & 2
