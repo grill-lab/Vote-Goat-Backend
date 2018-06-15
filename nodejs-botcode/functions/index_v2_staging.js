@@ -522,19 +522,19 @@ app.intent('Welcome', conv => {
   // console.log(util.inspect(conv, false, null));
 
   const textToSpeech = `<speak>` +
-    `<emphasis level="moderate">Hey, welcome to Vote Goat!</emphasis> <break time="0.5s" /> ` +
-    `Vote Goat aims to crowd source movie ratings and provide accurate movie recommendations. <break time="0.35s" /> ` +
-    `What would you like to do? <break time="0.25s" /> ` +
+    `<emphasis level="moderate">Hey,I am Vote Goat!</emphasis> <break time="0.5s" /> ` + 
+    `I crowdsource movie ratings and provide movie recommendations. <break time="0.35s" /> ` + // We can replace the first 2 lines with "Lets get started" When the user is coming for the second time.
+    `What would you like to do today? <break time="0.25s" /> ` + //added today to make it more personalised
     `Rank Movies? <break time="0.25s" /> ` +
-    `Get a Movie Recommendation? <break time="0.25s" /> ` +
-    `View your stats? <break time="0.25s" /> ` +
-    `View the Greated movies of all time? <break time="0.25s" /> ` +
+    `Get a Movie Recommendation? <break time="0.25s" /> ` + //Can we add a More Options after this line, so that it will only read 3 options
+    `View your stats? <break time="0.25s" /> ` +            // the remaining options can be read when the user clicks more.
+    `View the Greated movies of all time? <break time="0.25s" /> ` +  //Full list can also be displayed at the first time and splitted at next attempt
     `Or do you need help? <break time="0.25s" /> ` +
     `</speak>`;
 
-  const textToDisplay = `Hey, welcome to Vote Goat! ` +
-                        `Vote Goat aims to crowd source movie ratings & provide accurate movie recommendations. \n\n ` +
-                        `What would you like to do? \n\n ` +
+  const textToDisplay = `Welcome!, I am  Vote Goat! ` +
+                        `I crowdsource movie ratings & provide accurate movie recommendations. \n\n ` +
+                        `What would you like to do today? \n\n ` +
                         `🗳 Rank Movies? \n\n ` +
                         `🤔 Get a Movie Recommendation? \n\n ` +
                         `🏆 View your stats? \n\n ` +
