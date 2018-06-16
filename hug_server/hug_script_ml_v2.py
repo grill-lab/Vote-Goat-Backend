@@ -59,7 +59,7 @@ def check_api_token(api_key):
 #########################################
 ## Only focus on the following 2
 
-function ml_movie_recomendation (QUERY_USER_ID, QUERY_RATED_MOVIE_IDS, QUERY_RATED_MOVIE_SCORES, QUERY_RATED_GENRE_IDS, QUERY_RATED_GENRE_FREQS, QUERY_RATED_GENRE_AVG_SCORES):
+def ml_movie_recomendation (QUERY_USER_ID, QUERY_RATED_MOVIE_IDS, QUERY_RATED_MOVIE_SCORES, QUERY_RATED_GENRE_IDS, QUERY_RATED_GENRE_FREQS, QUERY_RATED_GENRE_AVG_SCORES):
     """
     Produces a list of movie recommendations (IMDB IDs)
     https://github.com/GoogleCloudPlatform/cloudml-samples/blob/master/movielens/trainer/task.py#L63
@@ -71,7 +71,7 @@ function ml_movie_recomendation (QUERY_USER_ID, QUERY_RATED_MOVIE_IDS, QUERY_RAT
     return movie_ids
 
 @hug.get(examples='gg_id=anonymous_google_id&api_key=API_KEY')
-def ml_movie_recommendation(genres: hug.types.text, gg_id: hug.types.text, api_key: hug.types.text, hug_timer=120):
+def movie_recommendation(genres: hug.types.text, gg_id: hug.types.text, api_key: hug.types.text, hug_timer=120):
     """
     Input: gg_id, api_key
     Output: Ten NN predicted top-k movies!
