@@ -140,6 +140,8 @@ def movie_recommendation(genres: hug.types.text, gg_id: hug.types.text, api_key:
                         else:
                             Genre_Dict[str(rated_movie_genres)]['downvotes']++
 
+                QUERY_RATED_MOVIE_IDS = list(map(links_dict.get, QUERY_RATED_MOVIE_IDS)) # Converting IMDBIds to Mobielens Ids
+
                 # The number of times the user rated each genre.
                 QUERY_RATED_GENRE_FREQS = [] # [32, 2, ...]
                 # The average rating on each genre.
