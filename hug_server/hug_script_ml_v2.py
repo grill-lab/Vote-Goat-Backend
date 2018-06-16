@@ -90,7 +90,7 @@ def movie_recommendation(genres: hug.types.text, gg_id: hug.types.text, api_key:
 
             if len(rating_training) >= 5):  # Minimum of 5 votes for Google cloud model to work!
                 # The user id.
-                QUERY_USER_ID = gg_id #'query_user_id'
+                QUERY_USER_ID = user_id #'query_user_id'
 
                 # Implemented Vote Goat genre names
                 # TODO: Allocate IDs to the following genres
