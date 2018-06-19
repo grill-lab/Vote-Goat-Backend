@@ -149,21 +149,17 @@ function forward_contexts (conv, intent_name, inbound_context_name, outbound_con
     Which intents? Voting, Repeat, Carousel? Several -> Keep it general!
   */
   if (typeof(conv.contexts.get(inbound_context_name)) !== "undefined") {
-    const inbound_context = conv.contexts.get(inbound_context_name);
-
-    if (inbound_context) {
-      /*
-        The inbound context exists.
-        Let's forwards it on!
-      */
-      console.log(`Forwarded contexts! Inbound: '${inbound_context_name}', Outbound: '${outbound_context_name}'`);
-      conv.contexts.set(outbound_context_name, 1, conv.contexts.get(inbound_context_name).parameters);
-    } else {
-      /*
-        We tried to forward the contents of a context which did not exist.
-      */
-      console.error(`ERROR: Failed to forwards the inbound context named "${inbound_context_name}"`);
-    }
+    /*
+      The inbound context exists.
+      Let's forwards it on!
+    */
+    console.log(`Forwarded contexts! Inbound: '${inbound_context_name}', Outbound: '${outbound_context_name}'`);
+    conv.contexts.set(outbound_context_name, 1, conv.contexts.get(inbound_context_name).parameters);
+  } else {
+    /*
+      We tried to forward the contents of a context which did not exist.
+    */
+    console.error(`ERROR: Failed to forwards the inbound context named "${inbound_context_name}"`);
   }
 }
 
@@ -266,7 +262,7 @@ function interpret_voting_intention (conv, voting) {
         if (upvotes >= downvotes) {
           /*
             User upvoted!
-            If (upvotes==downvotes) { assume an upvote due to uncertainty }
+            If (upvotes==downvotes) { we assume an upvote due to uncertainty }
           */
           voting_intention = 1;
         } else {
@@ -275,11 +271,10 @@ function interpret_voting_intention (conv, voting) {
           */
           voting_intention = 0;
         }
+        resolve(voting_intention); // Return the voting intention
       } else {
         reject("No voting detected");
       }
-
-      resolve(voting_intention); // Return the voting intention
     } else {
       // For use in HUG REST query
       reject("No voting detected");
@@ -289,6 +284,10 @@ function interpret_voting_intention (conv, voting) {
 }
 
 function goat_rows (body) {
+  /*
+    This function is for generating the GOAT table rows.
+    Currently the Table element is not available in production, but it is a great way of presenting this information!
+  */
   var goat_rows_list = [];
 
   for (let index = 0; index < body.goat_movies.length; index++) {
@@ -1089,21 +1088,21 @@ app.intent('voted', (conv, { voting }) => {
                 Detect if the user is in the training mode, if so, loop them!
                 */
                 console.log("LOOPING BACK TO TRAINING!");
+
                 if (typeof(conv.contexts.get('forward_genre')) !== 'undefined') {
                   // The 'forward_genre' exists!
                   if (typeof(conv.contexts.get('forward_genre').parameters['movieGenres']) !== 'undefined' && conv.contexts.get('forward_genre').parameters['movieGenres'] !== ' ') {
-                  // Forwarding genre parameter for next movie ranking
-                  console.log(`Voted intent: Forwarded genre!`);
-                  forward_contexts(conv, 'voted', 'forward_genre', 'forward_genre');
+                    // Forwarding genre parameter for next movie ranking
+                    forward_contexts(conv, 'voted', 'forward_genre', 'forward_genre');
                   }
                 }
 
                 if (typeof(conv.contexts.get('forward_genre_more')) !== 'undefined') {
                   // The 'forward_genre_more' context exists
                   if (typeof(conv.contexts.get('forward_genre_more').parameters['movieGenres']) !== 'undefined' && conv.contexts.get('forward_genre_more').parameters['movieGenres'] !== ' ') {
-                  // Forwarding genre parameter for next movie ranking
-                  console.log(`Voted intent: Forwarded genre!`);
-                  forward_contexts(conv, 'voted', 'forward_genre_more', 'forward_genre_more');
+                    // Forwarding genre parameter for next movie ranking
+                    console.log(`Voted intent: Forwarded genre!`);
+                    forward_contexts(conv, 'voted', 'forward_genre_more', 'forward_genre_more');
                   }
                 }
 
@@ -1136,6 +1135,7 @@ app.intent('voted', (conv, { voting }) => {
                   textToDisplay = `Huzzah, a successful movie recommendation! \n\n` +
                     `Try looking for ${movie_title} on YouTube or the Google Play store. \n\n` +
                     `What do you want to do next? Rank movies, get another movie recommendation or quit?`;
+
                   chatbase_analytics(
                     conv,
                     `Successful movie recommendation: ${movie_title}`, // input_message
@@ -1153,6 +1153,7 @@ app.intent('voted', (conv, { voting }) => {
                   textToDisplay = `Sorry about that. \n\n` +
                     `Try ranking more movies to improve future recommendations. \n\n` +
                     `What do you want to do next? Rank movies, view your stats, get help or quit?`;
+
                   chatbase_analytics(
                     conv,
                     `Unsuccessful movie recommendation!`, // input_message
@@ -1181,7 +1182,7 @@ app.intent('voted', (conv, { voting }) => {
                   );
                 }
               } else {
-                console.log('An error was encountered in upvote function');
+                console.error('An error was encountered in upvote function');
                 /*
                   TODO: Change this from catch_error to a redirect to voting, pretend the last vote worked?
                   If the user is shown a movie, then they lock their phone for a bit, the context dies and they experience this error!
@@ -1193,6 +1194,7 @@ app.intent('voted', (conv, { voting }) => {
             } else {
               /*
                 Shouldn't trigger - the user didn't have the 'voting_context' context!
+                TODO: Rather than prompt an error, attempt to recover voting_context from user.storage, or use handle_no_contexts function!
               */
               console.log('Voting intent error: No voting_context context present!');
               return catch_error(conv, 'No voting mode detected!', 'voting intent');
@@ -1232,13 +1234,13 @@ app.intent('goat', (conv, { movieGenre }) => {
   return parse_parameter_list(movieGenre, ' ')
   .then(parsed_movieGenre_string => {
     movie_genres_string = parsed_movieGenre_string;
-    console.log(`GOAT 1: "${parsed_movieGenre_string}" & "${movie_genres_string}"`);
+    //console.log(`GOAT 1: "${parsed_movieGenre_string}" & "${movie_genres_string}"`);
 
     return parse_parameter_list(movieGenre, ', verbose')
     .then(parsed_movieGenre_comma_separated_string => {
 
       movie_genres_comma_separated_string = parsed_movieGenre_comma_separated_string;
-      console.log(`GOAT 1: "${parsed_movieGenre_comma_separated_string}" & "${movie_genres_string}"`);
+      //console.log(`GOAT 1: "${parsed_movieGenre_comma_separated_string}" & "${movie_genres_string}"`);
 
       //const movie_genres_string = parse_parameter_list(movieGenre, ' '); // parse movieGenre dialogflow parameter input
       //const movie_genres_comma_separated_string = parse_parameter_list(movieGenre, ', '); // parse movieGenre dialogflow parameter input
@@ -1325,12 +1327,12 @@ app.intent('goat', (conv, { movieGenre }) => {
               return goat_rows(body)
               .then(goat_rows_list => {
                 // Setting the variable above
-                console.log(`GOAT rows 1: ${goat_rows_list}`);
+                //console.log(`GOAT rows 1: ${goat_rows_list}`);
                 goat_movies_list = goat_rows_list;
                 return goat_rows_list;
               })
               .then(goat_rows_list => {
-                console.log(`goat rows 2: ${goat_rows_list}`);
+                //console.log(`goat rows 2: ${goat_rows_list}`);
                 if (movie_genres_comma_separated_string.length > 2) {
                   // The user provided genre parameters
                   // >2 because no movie genres is ` `
