@@ -729,12 +729,14 @@ function voting_intent (conv, movieGenre) {
 
           store_fallback_response(conv, fallback_messages, suggestions);
 
+
           const genre_list = helpExtract(body.genres);
           const actor_list = helpExtract(body.actors);
           const director_list = helpExtract(body.director);
 
           let genre_speech = '';
           let genre_text = '';
+
           if (genre_list.length > 1) {
             genre_speech = `${movieTitle}'s genres are: ${genre_list}. <break time="0.25s" /> `;
             genre_text = `Genres: ${genre_list}. \n\n`;
@@ -745,19 +747,38 @@ function voting_intent (conv, movieGenre) {
 
           store_movie_data(conv, 'training', movieID, movieTitle, plot, year)
 
+          const ranking_text = [
+            `Would you watch ${movieTitle}?`,
+            `What about ${movieTitle}`,
+            `What do you think of ${movieTitle}`
+          ];
+
+          const fact_intro = `Bonus Trivia: `;
+          const random_fact = [
+            `${movieTitle} was released in the year ${year}!`,
+            `${movieTitle} was directed by ${director_list}!`,
+            `${movieTitle} currently has an IMDB rating of ${imdbRating} out of 10!`,
+            `The cast of ${movieTitle} is primarily comprised of ${actor_list}!`,
+            `${movieTitle} is a ${genre_list} movie!`
+          ];
+          const bonus = fact_intro + random_fact[Math.floor(Math.random() * random_fact.length)];
+
+          const textToSpeech =  `<speak>${ranking_text[Math.floor(Math.random() * ranking_text.length)]}<break time="0.35s" />${bonus}</speak>`;
+          const textToDisplay = bonus;
+
+          /*
           const textToSpeech = `<speak>` +
-            `I found the movie ${movieTitle}. <break time="0.5s" /> ` +
+            `Would you watch ${movieTitle}? <break time="0.5s" /> ` +
             `Released in the year ${year}, it was directed by ${director_list} and currently has an IMDB rating of ${imdbRating} out of 10. <break time="0.35s" /> ` +
-            `The cast of ${movieTitle} is primarily comprised of ${actor_list}. <break time="0.25s" /> ` +
-            genre_speech +
-            `Would you watch ${movieTitle}?` +
+            //`The cast of ${movieTitle} is primarily comprised of ${actor_list}. <break time="0.25s" /> ` +
+            //genre_speech +
             `</speak>`;
 
-          const textToDisplay = `I found the movie "${movieTitle}". \n\n` +
+          const textToDisplay = `Would you watch ${movieTitle}? \n\n` +
               `Released in ${year}, it was directed by ${director_list} and it currently has an IMDB rating of ${imdbRating}/10. \n\n` +
-              `The cast of ${movieTitle} is primarily comprised of ${actor_list}. \n\n` +
-              genre_text +
-              `Would you watch ${movieTitle}?`;
+              //`The cast of ${movieTitle} is primarily comprised of ${actor_list}. \n\n` +
+              //genre_text;
+          */
 
           store_repeat_response(conv, 'Training', textToSpeech, textToDisplay); // Storing repeat info
 
@@ -780,9 +801,9 @@ function voting_intent (conv, movieGenre) {
             conv.ask(
               new BasicCard({
                 title: `${movieTitle} (${year})`,
-                text: `Plot: ${plot}`,
+                text: ``,
                 buttons: new Button({
-                  title: `🍿 Look for "${movieTitle}" on Google Play?`,
+                  title: `🍿 "${movieTitle}" on Google Play?`,
                   url: `https://play.google.com/store/search?q=${movieTitle}&c=movies`,
                 }),
                 image: { // Mostly, you can provide just the raw API objects
