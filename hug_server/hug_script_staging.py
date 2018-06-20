@@ -4,6 +4,7 @@ from random import *
 import numpy as np
 import pendulum
 import hug
+import json
 import operator
 from operator import itemgetter
 
@@ -109,7 +110,7 @@ def submit_movie_rating(gg_id: hug.types.text, movie_id: hug.types.text, rating:
 				latest_usr_rec_ts = db.recommendation_history.find({"userId": user_id}).sort('k_mov_timestamp', -1)[0]['k_mov_timestamp'] # Getting the user's last recommendation session timestamp
 				db.recommendation_history.update_one({"userId": user_id, "k_mov_timestamp": latest_usr_rec_ts}, {"$set": {"voted": rating}}) # Recording the user's vote within the recommendation section
 
-			if (result == 0):  # User hasn't rated this movie yet.
+			if (result == 0):	# User hasn't rated this movie yet.
 				db.user_ratings.insert_one({"userId": user_id, "imdbID": movie_id, "rating": rating})
 
 				if (rating == 1):
@@ -239,22 +240,14 @@ def build_training_response(mongodb_result, hug_timer, remaining_count):
 	"""
 	For reducing the duplicate lines in the 'get_single_training_movie' function.
 	"""
-	return {'imdbID': mongodb_result['imdbID'],
-			'plot': mongodb_result['plot'],
-			'year': mongodb_result['year'],
-			'poster_url': mongodb_result['poster'],
-			'actors': mongodb_result['actors'],
-			'director': mongodb_result['director'],
-			'genres': mongodb_result['genre'],
-			'title': mongodb_result['title'],
-			'imdbRating': mongodb_result['imdbRating'],
+	return {'movie_result': mongodb_result,
 			'remaining': remaining_count,
 			'success': True,
 			'valid_key': True,
 			'took': float(hug_timer)}
 
-@hug.get(examples='gg_id=anonymous_google_id&genres=horror,drama&actors=actor_one,actor_two,actor_three&api_key=API_KEY')
-def get_single_training_movie(gg_id: hug.types.text, genres: hug.types.text, actors: hug.types.text, api_key: hug.types.text, hug_timer=5):
+@hug.get(examples='gg_id=anonymous_google_id&sort_target=imdbVotes&sort_direction=DESCENDING&genres=horror,drama&actors=actor_one,actor_two,actor_three&api_key=API_KEY')
+def get_single_training_movie(gg_id: hug.types.text, sort_target: hug.types.text, sort_direction: hug.types.text, genres: hug.types.text, actors: hug.types.text, api_key: hug.types.text, hug_timer=5):
 	"""
 	Get a single movie for the training bot section.
 	Retrieves a list of movies the user has previously voted for, used as a filter!
@@ -262,6 +255,14 @@ def get_single_training_movie(gg_id: hug.types.text, genres: hug.types.text, act
 	"""
 	if (check_api_token(api_key) == True):
 		# API KEY VALID
+
+		allowed_targets = ['imdbVotes', 'imdbRating', 'released', 'imdbID', 'title']
+		if (sort_target not in allowed_targets):
+			return {'success': False,
+					'error_message': 'Selected target not allowed yet. Create mongodb index then add to the "allowed_targets" list. Allowed: imdbVotes imdbRating released imdbID title.',
+					'valid_key': True,
+					'took': float(hug_timer)}
+
 		user_id = get_user_id_by_gg_id(gg_id) # Get the user's movie rating user ID (incremental)
 		if user_id is not None:
 			imdb_list = get_voted_movie_by_user_id(user_id) # Produce a list of the user's previously rated movies.
@@ -276,40 +277,37 @@ def get_single_training_movie(gg_id: hug.types.text, genres: hug.types.text, act
 			* Present the most controversial movies? Users might not appreciate being shown horrible/violent movies.
 			"""
 
-
 			if ((genres == ' ') | (genres == '%20')):
-			  remaining_count = db.movie.find({'imdbID': {'$nin': imdb_list}}).count()
-			  result = list(db.movie.find({'imdbID': {'$nin': imdb_list}, 'imdbVotes': {'$gt': 1}, 'year':{'$gt':1945}}).sort([('imdbVotes', -1)]))[0] # Filter out the list of previously voted for movies, sorted by imdb vote data (rating, quantity votes), takes top 1.
-			  return build_training_response(result, hug_timer, remaining_count)
+				remaining_count = db.movie.find({'imdbID': {'$nin': imdb_list}}).count()
 			else:
 				genres.replace('%20', ' ') # Browser pushes ' ', NodeJS pushes '%20'
-				if (' ' in genres):
-					#blah!
-					genres = genres.split(' ')
-				#print(genres)
-				genre_list_check = isinstance(genres, list)
+				genres = genres.split(' ')
+				remaining_count = db.movie.find({'imdbID': {'$nin': imdb_list}, "genre": {'$all': genres}}).count()
 
-				if (genre_list_check == True):
-					remaining_count = db.movie.find({'imdbID': {'$nin': imdb_list}, "genre": {'$all': genres}}).count()
+			if (remaining_count > 0):
+				# Results found! Return 1 result to the user.
+
+				if (sort_direction == "DESCENDING"):
+					sorting = DESCENDING
 				else:
-					remaining_count = db.movie.find({'imdbID': {'$nin': imdb_list}, "genre": genres}).count()
+					sorting = ASCENDING
 
-				if (remaining_count > 0):
-					# Results found! Return 1 result to the user.
-					if (genre_list_check == True):
-						result = db.movie.find({'imdbID': {'$nin': imdb_list}, "genre": {'$all': genres}})[0]
-					else:
-						result = db.movie.find({'imdbID': {'$nin': imdb_list}, "genre": genres})[0]
-
-					return build_training_response(result, hug_timer, remaining_count)
+				if (len(genres) > 1):
+					result = (db.movie.find({'imdbID': {'$nin': imdb_list}, "genre": {'$all': genres}}, {'_id': False}).sort(sort_target, sorting).limit(1))[0]
 				else:
-					# No results, provide json result for nodejs to detect!
-					return {'success': False,
-							'valid_key': True,
-							'took': float(hug_timer)}
+					result = (db.movie.find({'imdbID': {'$nin': imdb_list}}, {'_id': False}).sort(sort_target, sorting).limit(1))[0]
+
+				return build_training_response(result, hug_timer, remaining_count)
+			else:
+				# No movie results!
+				return {'success': False,
+						'error_message': 'Found no movies (remaining count == 0)',
+						'valid_key': True,
+						'took': float(hug_timer)}
 		else:
 			# Invalid GG_ID
 			return {'success': False,
+					'error_message': 'Invalid UserId',
 					'valid_key': True,
 					'took': float(hug_timer)}
 	else:
@@ -372,15 +370,15 @@ def get_random_movie_list(gg_id: hug.types.text, api_key: hug.types.text, hug_ti
 			for result in results:
 				imdbID_list.append(result['imdbID']) # Logging the imdbID for storing in mongodb
 				combined_json_list.append({'imdbID': result['imdbID'],
-										   'k_mov_ts': timestamp,
-										   'plot': result['plot'],
-										   'year': result['year'],
-										   'poster_url': result['poster'],
-										   'actors': result['actors'],
-										   'genres': result['genre'],
-										   'director': result['director'],
-										   'title': result['title'],
-										   'imdbRating': result['imdbRating']})
+											 'k_mov_ts': timestamp,
+											 'plot': result['plot'],
+											 'year': result['year'],
+											 'poster_url': result['poster'],
+											 'actors': result['actors'],
+											 'genres': result['genre'],
+											 'director': result['director'],
+											 'title': result['title'],
+											 'imdbRating': result['imdbRating']})
 
 			clicked_movie_IDs = [] # Intentionally blank!
 			voting_intention = [] # Intentionally blank!
@@ -389,9 +387,9 @@ def get_random_movie_list(gg_id: hug.types.text, api_key: hug.types.text, hug_ti
 			db.recommendation_history.insert_one({"userId": user_id, "k_movie_list": imdbID_list, "NN_ID": NN_ID, "k_mov_timestamp": timestamp, "clicked_movie_IDs": clicked_movie_IDs, "voted": voting_intention})
 
 			return {'movies': combined_json_list,
-				   'success': True,
-				   'valid_key': True,
-				   'took': float(hug_timer)}
+					 'success': True,
+					 'valid_key': True,
+					 'took': float(hug_timer)}
 		else:
 			# INVALID GG_ID
 			return {'success': False,
@@ -450,13 +448,13 @@ def build_movie_json(mongodb_result, hug_timer):
 		adjusted_goat_score = int(goat_score * (total_result_votes/average_vote_quantity)) # TODO: Figure out a better adjusted goat score!
 
 		combined_json_list.append({'imdbID': result['imdbID'],
-								   'year': result['year'],
-								   'title': result['title'],
-								   'imdb_rating': result['imdbRating'],
-								   'runtime': result['runtime'],
-								   'upvotes': result['goat_upvotes'],
-								   'downvotes': result['goat_downvotes'],
-								   'goat_score': adjusted_goat_score})
+									 'year': result['year'],
+									 'title': result['title'],
+									 'imdb_rating': result['imdbRating'],
+									 'runtime': result['runtime'],
+									 'upvotes': result['goat_upvotes'],
+									 'downvotes': result['goat_downvotes'],
+									 'goat_score': adjusted_goat_score})
 
 	return combined_json_list
 
@@ -465,12 +463,12 @@ def get_goat_movies(genres: hug.types.text, api_key: hug.types.text, hug_timer=5
 	"""
 	Get a list of the most upvoted (GOAT) movies.
 	Input: gg_id, genres, api_key
-	URL: http://HOST:PORT/get_single_training_movie?genres=none&api_key=API_KEY
+	URL: http://HOST:PORT/get_goat_movies?genres=%20&api_key=API_KEY
 	"""
 	if (check_api_token(api_key) == True):
 		# API KEY VALID
 		if ((genres == ' ') | (genres == '%20')):
-		  result = list(db.movie.find({'goat_upvotes': {"$gt": 1}}).sort([('goat_upvotes', -1)]))[:10]
+			result = list(db.movie.find({'goat_upvotes': {"$gt": 1}}).sort([('goat_upvotes', -1)]))[:10]
 		else:
 			# The uer has input movie genres
 			genres.replace('%20', ' ') # Browser pushes ' ', NodeJS pushes '%20'
