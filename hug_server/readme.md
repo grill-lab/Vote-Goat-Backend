@@ -85,6 +85,7 @@ sudo mv nginx.conf /etc/nginx/nginx.conf
 sudo service nginx restart
 sudo mv default /etc/nginx/sites-available/default
 sudo service nginx restart
+sudo mv gunicorn.service /etc/systemd/system/multi-user.target.wants/gunicorn.service
 ```
 
 ### Whitelist Google IP addresses

@@ -2,7 +2,7 @@
 
 // Requirements & Global vars:
 
-const { dialogflow, Suggestions, BasicCard, Button, Carousel, Table, Image, SimpleResponse } = require('actions-on-google');
+const { dialogflow, Suggestions, BasicCard, Button, Carousel, Table, Image, SimpleResponse, BrowseCarousel, BrowseCarouselItem} = require('actions-on-google');
 const functions = require('firebase-functions'); // Mandatory when using firebase
 const requestLib = require('request'); // Used for querying the HUG.REST API
 //const util = require('util'); // Used for debugging conv
@@ -100,46 +100,59 @@ function chatbase_analytics(conv, input_message, input_intent, win_or_fail) {
   Will help optimize user experience whilst minimizing privacy impact.
   */
   // TODO: Change the UserID used here!
-  let lookup_user_id = conv.user.id;
-  let userId;
+  return new Promise((resolve, reject) => {
+    // Do async job
+    let userId;
+    if (typeof(conv.user.id) !== 'undefined') {
+      userId = (conv.user.id).toString();
+    } else {
+      userId = 'NO_USERID_SUPPLIED';
+    }
 
-  if (typeof lookup_user_id !== 'undefined' && lookup_user_id) {
-    userId = lookup_user_id.toString();
-  } else {
-    userId = 'NO_USERID_SUPPLIED';
-  }
+    //console.log(`${input_message} ${input_intent} ${userId}`);
 
-  console.log(`${input_message} ${input_intent} ${userId}`);
-
-  if (win_or_fail === 'Win') {
-    // For reporting successful bot interaction
-    chatbase.newMessage('CHATBASE_API_KEY')
-    .setPlatform('Google Assistant')
-  	.setMessage(input_message)
-  	.setVersion('1.0')
-  	.setUserId(userId)
-    .setAsTypeUser() // sets the message as type user
-    .setAsHandled() // set the message as handled -- this means the bot understood the message sent by the user
-    .setIntent(input_intent) // the intent of the sent message (does not have to be set for agent messages)
-    .setTimestamp(Date.now().toString()) // Only unix epochs with Millisecond precision
-  	.send()
-  	.then(msg => console.log(msg.getCreateResponse()))
-  	.catch(err => console.error(err));
-  } else {
-    // For reporting fallback attempts
-    chatbase.newMessage('CHATBASE_API_KEY')
-    .setPlatform('Google Assistant')
-    .setMessage(input_message)
-    .setVersion('1.0')
-    .setUserId(userId)
-    .setAsTypeUser() // sets the message as type agent
-    .setAsNotHandled() // set the message as not handled -- this means the opposite of the preceding
-    .setIntent(input_intent) // the intent of the sent message (does not have to be set for agent messages)
-    .setTimestamp(Date.now().toString()) // Only unix epochs with Millisecond precision
-    .send()
-    .then(msg => console.log(msg.getCreateResponse()))
-    .catch(err => console.error(err));
-  }
+    if (win_or_fail === 'Win') {
+      // For reporting successful bot interaction
+      chatbase.newMessage('CHATBASE_API_KEY')
+      .setPlatform('Google Assistant')
+    	.setMessage(input_message)
+    	.setVersion('1.0')
+    	.setUserId(userId)
+      .setAsTypeUser() // sets the message as type user
+      .setAsHandled() // set the message as handled -- this means the bot understood the message sent by the user
+      .setIntent(input_intent) // the intent of the sent message (does not have to be set for agent messages)
+      .setTimestamp(Date.now().toString()) // Only unix epochs with Millisecond precision
+    	.send()
+    	.then(msg => {
+        console.log(msg.getCreateResponse());
+        resolve("Success");
+      })
+    	.catch(err => {
+        console.error(err);
+        reject("Failure");
+      });
+    } else {
+      // For reporting fallback attempts
+      chatbase.newMessage('CHATBASE_API_KEY')
+      .setPlatform('Google Assistant')
+      .setMessage(input_message)
+      .setVersion('1.0')
+      .setUserId(userId)
+      .setAsTypeUser() // sets the message as type agent
+      .setAsNotHandled() // set the message as not handled -- this means the opposite of the preceding
+      .setIntent(input_intent) // the intent of the sent message (does not have to be set for agent messages)
+      .setTimestamp(Date.now().toString()) // Only unix epochs with Millisecond precision
+      .send()
+      .then(msg => {
+        console.log(msg.getCreateResponse());
+        resolve("Success");
+      })
+    	.catch(err => {
+        console.error(err);
+        reject("Failure");
+      });
+    }
+  });
 }
 
 function forward_contexts (conv, intent_name, inbound_context_name, outbound_context_name) {
@@ -148,22 +161,30 @@ function forward_contexts (conv, intent_name, inbound_context_name, outbound_con
     Why? Helper intents help direct conversations & need to forwards the user to the corrent intended intent after error handling!
     Which intents? Voting, Repeat, Carousel? Several -> Keep it general!
   */
-  if (typeof(conv.contexts.get(inbound_context_name)) !== "undefined") {
-    /*
-      The inbound context exists.
-      Let's forwards it on!
-    */
-    console.log(`Forwarded contexts! Inbound: '${inbound_context_name}', Outbound: '${outbound_context_name}'`);
-    conv.contexts.set(outbound_context_name, 1, conv.contexts.get(inbound_context_name).parameters);
-  } else {
-    /*
-      We tried to forward the contents of a context which did not exist.
-    */
-    console.error(`ERROR: Failed to forwards the inbound context named "${inbound_context_name}"`);
-  }
+
+  return new Promise((resolve, reject) => {
+    // Do async job
+    console.log(`forward_context pre triggered! ${conv.contexts.get(inbound_context_name).parameters}`);
+    if (typeof(conv.contexts.get(inbound_context_name)) !== "undefined") {
+      /*
+        The inbound context exists.
+        Let's forwards it on!
+      */
+      console.log(`Forwarded contexts! Inbound: '${inbound_context_name}', Outbound: '${outbound_context_name}. CONTENTS BEFORE: ${conv.contexts.get(inbound_context_name).parameters}'`);
+      conv.contexts.set(outbound_context_name, 1, conv.contexts.get(inbound_context_name).parameters);
+      console.log(`CONTENTS AFTERWARDS FORWARD: ${conv.contexts.get(outbound_context_name).parameters}`);
+      resolve('Success!');
+    } else {
+      /*
+        We tried to forward the contents of a context which did not exist.
+      */
+      console.error(`ERROR: Failed to forwards the inbound context named "${inbound_context_name}"`);
+      reject('Failure');
+    }
+  });
 }
 
-function store_movie_data (conv, mode, movieID, movieTitle, plot, year) {
+function store_movie_data (conv, mode, movieID, movieTitle, plot, year, imdb_rating, genres, actor_list, director_list) {
   /*
     Storing the data into the vote_context parameters.
     Not persistent data storage & pretty messy..
@@ -173,6 +194,10 @@ function store_movie_data (conv, mode, movieID, movieTitle, plot, year) {
     "movie": `${movieID}`, // Setting the displayed movie's imdbID into the voting context!
     "title": `${movieTitle}`, // Setting the displayed movie's imdbID into the voting context!
     "plot": `${plot}`,
+    "imdb_rating": `${imdb_rating}`,
+    "genres": `${genres}`,
+    "actors": `${actor_list}`,
+    "directors": `${director_list}`,
     "year": `${year}`
   });
 
@@ -180,20 +205,30 @@ function store_movie_data (conv, mode, movieID, movieTitle, plot, year) {
     Conversation data storage - could be temporary like contexts!
     TODO: Trigger no-context situation & see if conv.data persists or only conv.user.storage persists!
   */
-  conv.data.voting_mode = mode
-  conv.data.voting_movieID = movieID // Setting the movie ID for no-context backup!
-  conv.data.voting_movieTitle = movieTitle
-  conv.data.voting_moviePlot = plot
-  conv.data.voting_movieYear = year
+  conv.data.voting_mode = mode;
+  conv.data.voting_movieID = movieID; // Setting the movie ID for no-context backup!
+  conv.data.voting_movieTitle = movieTitle;
+  conv.data.voting_moviePlot = plot;
+  conv.data.voting_movieYear = year;
+  conv.data.voting_genres = genres;
+  conv.data.voting_actors = actor_list;
+  conv.data.voting_director = director_list;
 
   /*
     User storage - persists between conversations!
   */
-  conv.user.storage.voting_mode = mode
-  conv.user.storage.voting_movieID = movieID
-  conv.user.storage.voting_mofvieTitle = movieTitle
-  conv.user.storage.voting_moviePlot = plot
-  conv.user.storage.voting_movieYear = year
+  conv.user.storage.voting_mode = mode;
+  conv.user.storage.voting_movieID = movieID;
+  conv.user.storage.voting_movieTitle = movieTitle;
+  conv.user.storage.voting_moviePlot = plot;
+  conv.user.storage.voting_movieYear = year;
+  conv.user.storage.voting_genres = genres;
+  conv.user.storage.voting_actors = actor_list;
+  conv.user.storage.voting_director = director_list;
+
+  return new Promise((resolve, reject) => {
+    resolve('Complete');
+  });
 }
 
 function store_repeat_response (conv, intent_name, speech, text) {
@@ -205,6 +240,11 @@ function store_repeat_response (conv, intent_name, speech, text) {
   conv.user.storage.last_intent_name = intent_name;
   conv.data.last_intent_prompt_speech = speech;
   conv.data.last_intent_prompt_text = text;
+
+  return new Promise((resolve, reject) => {
+  // Do async job
+    resolve('Complete');
+  });
 }
 
 function store_fallback_response (conv, fallback_messages, suggestions) {
@@ -308,6 +348,142 @@ function goat_rows (body) {
   return new Promise((resolve, reject) => {
     // Do async job
     resolve(goat_rows_list);
+  });
+}
+
+function check_recent_activity (conv, voting_intention) {
+
+  if (conv.data.recent_activity === 'undefined') {
+    // If value in conv doesn't exist, let's initialize it!
+    conv.data.recent_activity = 1;
+  } else {
+    // Every subsequent call within conv will iterate this value!
+    conv.data.recent_activity += 1;
+  }
+
+  return new Promise((resolve, reject) => {
+  // Do async job
+    if (typeof(conv.data.recent_activity) !== 'undefined') {
+      /*
+        The user has recent_activity in their user storage
+        How often should we trigger activity messages?
+          * Most users are short term users, however once v2 is out this may change. Big achievements may never trigger!
+          * Could be an exponential thing?
+      */
+      // TODO: React to upvoting | downvoting intention
+      const upvote = [
+        'Cool!',
+        'Great to hear!',
+        'Me too!',
+        'I like it too!',
+        'Nice one!',
+        'Bravo!',
+        'Awesome!',
+        'Fantastic!',
+        'Great taste!', // Perhaps not fair to apply to only upvotes?
+        'You are killing it!',
+        `You've got it in the bag!`,
+        'You are a rockstar!', // Not so for disliking movies? :P
+        'You are so amazing!',
+        'Way to go!',
+        'You are the best!',
+        'Yay!'
+      ];
+
+      const downvote = [
+        'Hmm, that`s a shame.',
+        'Sorry about that!',
+        'Yeah, I get what you mean.',
+        'Me neither!',
+        `I don't like it either!`,
+        'Fair Enough!',
+        'Shoot..!'
+      ];
+
+      const encourage_progress = [
+        "Keep it up!",
+        "Keep on voting!",
+        "You got this!",
+        'Keep ranking movies!',
+        'Keep it going!'
+      ];
+
+      var progress_response = ``;
+
+      if (voting_intention === 1) {
+        progress_response += upvote[Math.floor(Math.random() * upvote.length)];
+      } else {
+        progress_response += downvote[Math.floor(Math.random() * downvote.length)];
+      }
+
+      progress_response += ` `;
+      progress_response += encourage_progress[Math.floor(Math.random() * encourage_progress.length)];
+
+      if (conv.data.recent_activity > 1) {
+        // More than 1 recent activity
+        const rnd_num = Math.floor(Math.random() * 10);
+
+        if (rnd_num >= 8) {
+          /*
+            Rather than just providing a progress response, we'll give them an update regarding their leaderboard position!
+            We don't want to remind them of their leaderboard position every notification.
+            30% activation rate
+          */
+          const qs_input = {
+           //  HUG REST GET request parameters
+           gg_id: parse_userId(conv), // Anonymous google id
+           api_key: 'HUG_REST_API_KEY'
+          };
+
+          return hug_request('HUG', 'get_user_ranking', 'GET', qs_input)
+          .then(body => {
+            if (body.success === true && body.valid_key === true) {
+
+              const  total_movie_votes = body.total_movie_votes; // How many movies the user has ranked
+              //const  total_movie_upvotes = body.total_movie_upvotes; //
+              //const  total_movie_downvotes = body.total_movie_downvotes;
+              const  movie_leaderboard_ranking = body.movie_leaderboard_ranking; // The user's ranking
+              //const  quantity_users = body.quantity_users;
+
+              const possible_leaderboard_notifications = [
+                `You're now ${movie_leaderboard_ranking} in Vote Goat leaderboards! Keep on voting!`,
+                `Wow, you've voted ${total_movie_votes} times, you sure know your movies!`,
+                `Incredible! You've ranked ${total_movie_votes} movies, keep it up!`,
+                `You're a Star! You've achieved position ${movie_leaderboard_ranking}. Keep winning!`,
+                `That's a job well done!, You ranked ${total_movie_votes} movies. You are almost there!`,
+                `You're the best! You've ranked ${total_movie_votes} movies`
+              ]; // TODO: Add more notifications!
+
+              resolve(possible_leaderboard_notifications[Math.floor(Math.random() * possible_leaderboard_notifications.length)]); // Return randomly selected notification
+            } else {
+              // Returning a normal progress speech
+              resolve(progress_response);
+            }
+          })
+          .catch(error_message => {
+           /*
+            TODO: Do we want to report an error or just resolve a static message?
+            Technically if this occurs then something is wrong with HUG & the rest of the bot probably isn't operational..
+           */
+           return catch_error(conv, error_message, 'progress_notification');
+           //resolve(progress_speech[activity_index]); // Could use this instead
+          });
+        } else {
+          /*
+            We don't want to show the user a leaderboard notification, let's show a normal progress message.
+          */
+          resolve(progress_response);
+        }
+      } else {
+        // The user hasn't triggered a motivation prompt!
+        resolve(progress_response);
+      }
+
+    } else {
+      // There was no recent activity value found
+      const error_message = 'Progress notification: No recent activity detected!';
+      reject(error_message);
+    }
   });
 }
 
@@ -629,7 +805,7 @@ function voting_intent (conv, movieGenre) {
   return parse_parameter_list(movieGenre, ' ')
   .then(movie_genres_string => {
     global_movie_genres_string = movie_genres_string;
-    console.log(`Training 1 : "${global_movie_genres_string}"`);
+    //console.log(`Training 1 : "${global_movie_genres_string}"`);
 
     conv.user.storage.movieGenres = global_movie_genres_string;
 
@@ -686,7 +862,7 @@ function voting_intent (conv, movieGenre) {
       });
     }
 
-    console.log(`Training 2 : "${global_movie_genres_string}"`);
+    //console.log(`Training 2 : "${global_movie_genres_string}"`);
     return global_movie_genres_string;
   })
   .then(global_movie_genres_string => {
@@ -694,12 +870,14 @@ function voting_intent (conv, movieGenre) {
     const qs_input = {
       //  HUG REST GET request parameters
       gg_id: parse_userId(conv), // Anonymous google id
+      sort_target: 'imdbVotes', // What field we want to sort by. Can be: ['imdbVotes', 'imdbRating', 'released', 'imdbID', 'title']
+      sort_direction: 'DESCENDING', // Descending sort of imdbVotes
       genres: global_movie_genres_string, // The user's genre input (Possibilities: ' ', 'genre', 'genre,genre,genre,...' strings)
       actors: ' ', // If we were to add actor search, we'd specify that here.
       api_key: 'HUG_REST_API_KEY'
     };
 
-    console.log(`Training 3 :"${global_movie_genres_string}"`);
+    //console.log(`Training 3 :"${global_movie_genres_string}"`);
 
     return hug_request('HUG', 'get_single_training_movie', 'GET', qs_input)
     .then(body => {
@@ -712,12 +890,12 @@ function voting_intent (conv, movieGenre) {
             Retrieving data from the 'get_single_training_movie' JSON request result
             const moviePlot = body.plot;
           */
-          const plot = (body.plot).replace('&', 'and');
-          const year = body.year;
-          const posterURL = (body.poster_url).replace("http://", "https://");
-          const movieTitle = (body.title).replace('&', 'and');
-          const imdbRating = body.imdbRating;
-          const movieID = body.imdbID;
+          const plot = (body.movie_result.plot).replace('&', 'and');
+          const year = body.movie_result.year;
+          const posterURL = (body.movie_result.poster).replace("http://", "https://");
+          const movieTitle = (body.movie_result.title).replace('&', 'and');
+          const imdbRating = body.movie_result.imdbRating;
+          const movieID = body.movie_result.imdbID;
 
           const fallback_messages = [
             `Sorry, what was that?`,
@@ -725,96 +903,100 @@ function voting_intent (conv, movieGenre) {
             `I'm sorry, I didn't understand that. Would you cosider watching ${movieTitle}?`
           ];
 
-          suggestions = [`👍`, `👎`, `📜 plot spoilers`, `🤔 recommend me a movie`, '📑 Help'];
+          suggestions = [`👍`, `👎`, `🎬 more movie info`, `🍿 Watch movie online`, `🤔 recommend me a movie`, '🏆 Show Stats', `🐐 GOAT Movies`, '📑 Help'];
 
-          store_fallback_response(conv, fallback_messages, suggestions);
+          return store_fallback_response(conv, fallback_messages, suggestions)
+          .then(() => {
+            const genre_list = helpExtract(body.movie_result.genre);
+            const actor_list = helpExtract(body.movie_result.actors);
+            const director_list = helpExtract(body.movie_result.director);
 
+            /*
+            let genre_speech = '';
+            let genre_text = '';
 
-          const genre_list = helpExtract(body.genres);
-          const actor_list = helpExtract(body.actors);
-          const director_list = helpExtract(body.director);
+            if (genre_list.length > 1) {
+              genre_speech = `${movieTitle}'s genres are: ${genre_list}. <break time="0.25s" /> `;
+              genre_text = `Genres: ${genre_list}. \n\n`;
+            } else {
+              genre_speech = `${movieTitle} is a ${genre_list} film. <break time="0.25s" /> `;
+              genre_text = `Genre: ${genre_list}. \n\n`;
+            }
+            */
 
-          let genre_speech = '';
-          let genre_text = '';
+            return store_movie_data(conv, 'training', movieID, movieTitle, plot, year, imdbRating, genre_list, actor_list, director_list)
+            .then(() => {
+              const ranking_text = [
+                `Would you watch "${movieTitle}"?`,
+                `What about "${movieTitle}"?`,
+                `How about "${movieTitle}"?`,
+                `What do you think of ${movieTitle}?`
+              ];
 
-          if (genre_list.length > 1) {
-            genre_speech = `${movieTitle}'s genres are: ${genre_list}. <break time="0.25s" /> `;
-            genre_text = `Genres: ${genre_list}. \n\n`;
-          } else {
-            genre_speech = `${movieTitle} is a ${genre_list} film. <break time="0.25s" /> `;
-            genre_text = `Genre: ${genre_list}. \n\n`;
-          }
+              const random_fact = [
+                `${movieTitle} was released in the year ${year}!`,
+                `${movieTitle} was directed by ${director_list}!`,
+                `${movieTitle} currently has an IMDB rating of ${imdbRating} out of 10!`,
+                `The cast of ${movieTitle} is primarily comprised of ${actor_list}!`,
+                `${movieTitle} is a ${genre_list} movie!`
+              ];
+              const chosen_ranking_text = ranking_text[Math.floor(Math.random() * ranking_text.length)];
+              const chosen_fact = random_fact[Math.floor(Math.random() * random_fact.length)];
+              const textToSpeech =  `<speak>${chosen_ranking_text}<break time="0.75s" />${chosen_fact}</speak>`;
+              const textToDisplay = chosen_ranking_text + '\n' + chosen_fact;
 
-          store_movie_data(conv, 'training', movieID, movieTitle, plot, year)
+              /*
+              const textToSpeech = `<speak>` +
+                `Would you watch ${movieTitle}? <break time="0.5s" /> ` +
+                `Released in the year ${year}, it was directed by ${director_list} and currently has an IMDB rating of ${imdbRating} out of 10. <break time="0.35s" /> ` +
+                //`The cast of ${movieTitle} is primarily comprised of ${actor_list}. <break time="0.25s" /> ` +
+                //genre_speech +
+                `</speak>`;
 
-          const ranking_text = [
-            `Would you watch ${movieTitle}?`,
-            `What about ${movieTitle}`,
-            `What do you think of ${movieTitle}`
-          ];
+              const textToDisplay = `Would you watch ${movieTitle}? \n\n` +
+                  `Released in ${year}, it was directed by ${director_list} and it currently has an IMDB rating of ${imdbRating}/10. \n\n` +
+                  //`The cast of ${movieTitle} is primarily comprised of ${actor_list}. \n\n` +
+                  //genre_text;
+              */
 
-          const fact_intro = `Bonus Trivia: `;
-          const random_fact = [
-            `${movieTitle} was released in the year ${year}!`,
-            `${movieTitle} was directed by ${director_list}!`,
-            `${movieTitle} currently has an IMDB rating of ${imdbRating} out of 10!`,
-            `The cast of ${movieTitle} is primarily comprised of ${actor_list}!`,
-            `${movieTitle} is a ${genre_list} movie!`
-          ];
-          const bonus = fact_intro + random_fact[Math.floor(Math.random() * random_fact.length)];
+              return store_repeat_response(conv, 'Training', textToSpeech, textToDisplay) // Storing repeat info
+              .then(() => {
+                chatbase_analytics(
+                  conv,
+                  `Showed user ${movieTitle} (${movieID})`, // input_message
+                  'Voting', // input_intent
+                  'Win' // win_or_fail
+                );
 
-          const textToSpeech =  `<speak>${ranking_text[Math.floor(Math.random() * ranking_text.length)]}<break time="0.35s" />${bonus}</speak>`;
-          const textToDisplay = bonus;
+                conv.ask(
+                  new SimpleResponse({
+                    speech: textToSpeech,
+                    text: textToDisplay
+                  })
+                );
 
-          /*
-          const textToSpeech = `<speak>` +
-            `Would you watch ${movieTitle}? <break time="0.5s" /> ` +
-            `Released in the year ${year}, it was directed by ${director_list} and currently has an IMDB rating of ${imdbRating} out of 10. <break time="0.35s" /> ` +
-            //`The cast of ${movieTitle} is primarily comprised of ${actor_list}. <break time="0.25s" /> ` +
-            //genre_speech +
-            `</speak>`;
-
-          const textToDisplay = `Would you watch ${movieTitle}? \n\n` +
-              `Released in ${year}, it was directed by ${director_list} and it currently has an IMDB rating of ${imdbRating}/10. \n\n` +
-              //`The cast of ${movieTitle} is primarily comprised of ${actor_list}. \n\n` +
-              //genre_text;
-          */
-
-          store_repeat_response(conv, 'Training', textToSpeech, textToDisplay); // Storing repeat info
-
-          chatbase_analytics(
-            conv,
-            `Showed user ${movieTitle} (${movieID})`, // input_message
-            'Voting', // input_intent
-            'Win' // win_or_fail
-          );
-
-          conv.ask(
-            new SimpleResponse({
-              speech: textToSpeech,
-              text: textToDisplay
-            })
-          );
-
-          if (conv.surface.capabilities.has('actions.capability.SCREEN_OUTPUT')) {
-            // The user has a screen, let's show them a card & suggestion buttons.
-            conv.ask(
-              new BasicCard({
-                title: `${movieTitle} (${year})`,
-                text: ``,
-                buttons: new Button({
-                  title: `🍿 "${movieTitle}" on Google Play?`,
-                  url: `https://play.google.com/store/search?q=${movieTitle}&c=movies`,
-                }),
-                image: { // Mostly, you can provide just the raw API objects
-                  url: `${posterURL}`,
-                  accessibilityText: `${movieTitle}`
-                },
-                display: 'WHITE'
-              }),
-              new Suggestions(`👍`, `👎`, `📜 plot spoilers`, `🤔 recommend me a movie`, '📑 Help')
-            );
-          }
+                if (conv.surface.capabilities.has('actions.capability.SCREEN_OUTPUT')) {
+                  // The user has a screen, let's show them a card & suggestion buttons.
+                  conv.ask(
+                    new BasicCard({
+                      title: `${movieTitle} (${year})`,
+                      text: ``,
+                      buttons: new Button({
+                        title: `🍿 "${movieTitle}" on Google Play?`,
+                        url: `https://play.google.com/store/search?q=${movieTitle}&c=movies`,
+                      }),
+                      image: { // Mostly, you can provide just the raw API objects
+                        url: `${posterURL}`,
+                        accessibilityText: `${movieTitle}`
+                      },
+                      display: 'WHITE'
+                    }),
+                    new Suggestions(`👍`, `👎`, `🎬 more movie info`, `🍿 Watch movie online`, `🤔 recommend me a movie`, `🐐 GOAT Movies`, '🏆 Show Stats', '📑 Help')
+                  );
+                }
+              });
+            });
+          });
         } else {
           const textToSpeech = `<speak>` +
                               `Sorry, Vote Goat couldn't find any movies. Please use fewer movie genres. What do you want to do next? <break time="0.5s" /> ` +
@@ -988,9 +1170,9 @@ app.intent('moreMovieInfo', (conv) => {
       var suggestions;
 
       if (requested_mode === 'list_selection') {
-        suggestions = [`👍`, `👎`, '🗳 Rank Movies', '📑 Help'];
+        suggestions = [`👍`, `👎`, '🗳 Rank Movies', `🐐 GOAT Movies`, '🏆 Show Stats', '📑 Help'];
       } else {
-        suggestions = [`👍`, `👎`, `🤔 recommend me a movie`, '📑 Help'];
+        suggestions = [`👍`, `👎`, `🤔 recommend me a movie`, `🐐 GOAT Movies`, '🏆 Show Stats', '📑 Help'];
       }
 
       store_fallback_response(conv, fallback_messages, suggestions);
@@ -1014,10 +1196,20 @@ app.intent('moreMovieInfo', (conv) => {
         "movie": movie_imdb_id
       });
 
+      const textToSpeech_prequel = `<speak>` +
+        `Here's more info on ${movie_title}! <break time="0.5s" /> ` +
+        `${movie_title} is an ${conv.contexts.get('vote_context').parameters['genres']} movie which was released in the year ${conv.contexts.get('vote_context').parameters['year']}, it was directed by ${conv.contexts.get('vote_context').parameters['directors']} and currently has an IMDB rating of ${conv.contexts.get('vote_context').parameters['imdb_rating']} out of 10. <break time="0.35s" /> ` +
+        `The cast of ${movie_title} is primarily comprised of ${conv.contexts.get('vote_context').parameters['actors']}. <break time="0.25s" /> ` +
+        `</speak>`;
+
+      const textToDisplay_prequel = `Would you watch ${movie_title}? \n\n` +
+          `Released in ${conv.contexts.get('vote_context').parameters['year']}, it was directed by ${conv.contexts.get('vote_context').parameters['directors']} and it currently has an IMDB rating of ${conv.contexts.get('vote_context').parameters['imdb_rating']}/10. \n\n` +
+          `The cast of ${movie_title} is primarily comprised of ${conv.contexts.get('vote_context').parameters['actors']}.`;
+
       const textToSpeech = `<speak>` +
         `Warning! ${movie_title} plot spoilers! <break time="0.75s" /> ` +
         `${movie_plot} <break time="1.5s" /> ` +
-        `Now that you know the plot of ${movie_title}, would you consider watching it? <break time="0.35s" /> ` +
+        `So, would you watch ${movie_title}? <break time="0.35s" /> ` +
         `</speak>`;
 
       const textToDisplay = `⚠️ Warning! "${movie_title}" plot spoilers! 🙉 \n\n` +
@@ -1034,21 +1226,19 @@ app.intent('moreMovieInfo', (conv) => {
 
       conv.ask(
         new SimpleResponse({
+          speech: textToSpeech_prequel,
+          text: textToDisplay_prequel
+        }),
+        new SimpleResponse({
           speech: textToSpeech,
           text: textToDisplay
         })
       );
 
       if (conv.surface.capabilities.has('actions.capability.SCREEN_OUTPUT')) {
-        if (requested_mode === 'list_selection') {
-          conv.ask(
-            new Suggestions(`👍`, `👎`, '🗳 Rank Movies', '📑 Help')
-          );
-        } else {
-          conv.ask(
-            new Suggestions(`👍`, `👎`, `🤔 recommend me a movie`, '📑 Help')
-          );
-        }
+        conv.ask(
+          new Suggestions(suggestions)
+        );
       }
     } else {
       /*
@@ -1072,11 +1262,11 @@ app.intent('voted', (conv, { voting }) => {
 
   const fallback_messages = [
     `Sorry, what was that?`,
-    `Sorry, I didn't catch that, would you watch ${movie_title}?`,
-    `I'm sorry, I didn't understand that. Would you cosider watching ${movie_title}?`
+    `Sorry, I didn't catch that, would you watch "${movie_title}"?`,
+    `I'm sorry, I didn't understand that. Would you cosider watching "${movie_title}"?`
   ];
 
-  const suggestions = [`👍`, `👎`, `📜 plot spoilers`, `🤔 recommend me a movie`, '📑 Help'];
+  const suggestions = [`👍`, `👎`, `🎬 more movie info`, `🍿 Watch movie online`, `🤔 recommend me a movie`, '📑 Help'];
 
   store_fallback_response(conv, fallback_messages, suggestions);
 
@@ -1087,15 +1277,19 @@ app.intent('voted', (conv, { voting }) => {
       //console.log(conv.contexts.get('vote_context'));
       //const requested_mode = conv.contexts.get('vote_context').parameters['mode']; // Retrieving the expected voting mode (within a list, or during training)!
       //const movie_imdb_id = conv.contexts.get('vote_context').parameters['movie']; // Retrieving the movie we want to downvote!
-        console.log(`TRAINING DEBUG: ${conv.contexts.get('vote_context').parameters['mode']} & ${conv.contexts.get('vote_context').parameters['movie']}`);
+        //console.log(`TRAINING DEBUG: ${conv.contexts.get('vote_context').parameters['mode']} & ${conv.contexts.get('vote_context').parameters['movie']}`);
         const qs_input = {
           //  HUG REST GET request parameters
           gg_id: parse_userId(conv), // Anonymous google id
           movie_id: conv.contexts.get('vote_context').parameters['movie'], // Passing the movie ID acquired via context
           rating: voting_intention, // The rating we're setting for the movie we just displayed to the user.
           mode: conv.contexts.get('vote_context').parameters['mode'],
+          conv_id: conv.id,
+          raw_vote: (conv.input.raw).toString(),
           api_key: 'HUG_REST_API_KEY'
         };
+
+        //console.log(util.inspect(conv, false, null)); // DEBUG function!
 
         return hug_request('HUG', 'submit_movie_rating', 'GET', qs_input)
         .then(body => {
@@ -1108,12 +1302,13 @@ app.intent('voted', (conv, { voting }) => {
                 /*
                 Detect if the user is in the training mode, if so, loop them!
                 */
-                console.log("LOOPING BACK TO TRAINING!");
+                //console.log("LOOPING BACK TO TRAINING!");
 
                 if (typeof(conv.contexts.get('forward_genre')) !== 'undefined') {
                   // The 'forward_genre' exists!
                   if (typeof(conv.contexts.get('forward_genre').parameters['movieGenres']) !== 'undefined' && conv.contexts.get('forward_genre').parameters['movieGenres'] !== ' ') {
                     // Forwarding genre parameter for next movie ranking
+                    console.log(`Voted intent: Forwarded genre 1!`);
                     forward_contexts(conv, 'voted', 'forward_genre', 'forward_genre');
                   }
                 }
@@ -1122,7 +1317,7 @@ app.intent('voted', (conv, { voting }) => {
                   // The 'forward_genre_more' context exists
                   if (typeof(conv.contexts.get('forward_genre_more').parameters['movieGenres']) !== 'undefined' && conv.contexts.get('forward_genre_more').parameters['movieGenres'] !== ' ') {
                     // Forwarding genre parameter for next movie ranking
-                    console.log(`Voted intent: Forwarded genre!`);
+                    console.log(`Voted intent: Forwarded genre 2!`);
                     forward_contexts(conv, 'voted', 'forward_genre_more', 'forward_genre_more');
                   }
                 }
@@ -1134,7 +1329,21 @@ app.intent('voted', (conv, { voting }) => {
                   'Win' // win_or_fail
                 );
 
-                return voting_intent(conv, []); // Attempting to loop! Empty genre parameter, will hopefully get the data from contexts.
+                return check_recent_activity(conv, voting_intention)
+                .then(progress_response => {
+                  if (progress_response !== '') {
+                    conv.ask(
+                      new SimpleResponse({
+                        speech: `<speak>${progress_response}</speak>`,
+                        text: progress_response
+                      })
+                    );
+                  }
+                  return progress_response;
+                })
+                .then(progress_response => {
+                  return voting_intent(conv, []); // Attempting to loop! Empty genre parameter, will hopefully get the data from contexts.
+                });
 
               } else if (conv.contexts.get('vote_context').parameters['mode'] === 'list_selection') {
                 /*
@@ -1190,18 +1399,28 @@ app.intent('voted', (conv, { voting }) => {
 
                 store_repeat_response(conv, 'voted', textToSpeech, textToDisplay); // Storing repeat info
 
-                conv.ask(
-                  new SimpleResponse({
-                    speech: textToSpeech,
-                    text: textToDisplay
-                  })
-                );
-
-                if (conv.surface.capabilities.has('actions.capability.SCREEN_OUTPUT')) {
+                return check_recent_activity(conv, voting_intention)
+                .then(progress_response => {
                   conv.ask(
-                    new Suggestions('🗳 Rank Movies', '🤔 recommend me a movie', '🏆 Show Stats', `🚪 Quit`)
+                    new SimpleResponse({
+                      speech: `<speak>${progress_response}</speak>`,
+                      text: progress_response
+                    })
                   );
-                }
+
+                  conv.ask(
+                    new SimpleResponse({
+                      speech: textToSpeech,
+                      text: textToDisplay
+                    })
+                  );
+
+                  if (conv.surface.capabilities.has('actions.capability.SCREEN_OUTPUT')) {
+                    conv.ask(
+                      new Suggestions('🗳 Rank Movies', '🤔 recommend me a movie', '🏆 Show Stats', `🚪 Quit`)
+                    );
+                  }
+                })
               } else {
                 console.error('An error was encountered in upvote function');
                 /*
@@ -1262,16 +1481,6 @@ app.intent('goat', (conv, { movieGenre }) => {
 
       movie_genres_comma_separated_string = parsed_movieGenre_comma_separated_string;
       //console.log(`GOAT 1: "${parsed_movieGenre_comma_separated_string}" & "${movie_genres_string}"`);
-
-      //const movie_genres_string = parse_parameter_list(movieGenre, ' '); // parse movieGenre dialogflow parameter input
-      //const movie_genres_comma_separated_string = parse_parameter_list(movieGenre, ', '); // parse movieGenre dialogflow parameter input
-
-      /*
-      const placeholder = {}; // The dict which will hold our parameter data
-      placeholder['placeholder'] = 'placeholder'; // We need this placeholder
-      app.setContext('home', 1, placeholder); // We need to insert data into the 'home' context for the home fallback to trigger! (Maybe not?..)
-      //TODO: Revisit placeholder context usage
-      */
 
       const qs_input = {
         //  HUG REST GET request parameters
@@ -1772,7 +1981,7 @@ app.intent('recommend_movie', (conv) => {
               );
             }
           } else {
-            console.log("recommendMovie: No movies were returned! Movies SHOULD have been returned!");
+            //console.log("recommendMovie: No movies were returned! Movies SHOULD have been returned!");
             // RATHER THAN SENDING TO ERROR, REDIRECT TO FALLBACK?
             return catch_error(conv, 'No movies found', 'recommendation');
           }
@@ -1930,7 +2139,7 @@ app.intent('item.selected', (conv, input, option) => {
 
     return hug_request('HUG', 'log_clicked_item', 'POST', options)
     .then(() => {
-      console.log('Successfully posted the clicked item to hug/mongodb!');
+      //console.log('Successfully posted the clicked item to hug/mongodb!');
 
       conv.contexts.set('recommend_movie_context', 0, { // Duration 0 to erase the context!
         "placeholder": "placeholder",
@@ -1944,59 +2153,70 @@ app.intent('item.selected', (conv, input, option) => {
 
       let title_let = (movie_element.title).replace('&', 'and'); // & characters invalidate SSML
 
-      store_movie_data(conv, 'list_selection', movie_element.imdbID, movie_element.title, movie_element.plot, movie_element.year)
+      return parse_parameter_list(movie_element.genres, ', ')
+      .then(movie_genres_string => {
+        store_movie_data(conv, 'list_selection', movie_element.imdbID, movie_element.title, movie_element.plot, movie_element.year, movie_element.imdbRating, movie_genres_string);
 
-      const genre_list = helpExtract(movie_element.genres);
-      const actor_list = helpExtract(movie_element.actors);
-      const director_list = helpExtract(movie_element.director);
+        const genre_list = helpExtract(movie_element.genres);
+        const actor_list = helpExtract(movie_element.actors);
+        const director_list = helpExtract(movie_element.director);
 
-      const textToSpeech = `<speak>` +
-        `"${title_let}" is a ${genre_list} movie, with a cast primarily comprised of ${actor_list}. <break time="0.35s" />` +
-        `It was released in ${movie_element.year}, directed by ${director_list} and has an IMDB rating of ${movie_element.imdbRating} out of 10. <break time="0.35s" /> ` +
-        `Are you interested in watching "${title_let}"?` +
-        `</speak>`;
+        var textToSpeech = `<speak>`;
 
-      const textToDisplay = `Title: ${title_let}\n` +
-      `Year: ${movie_element.year}\n` +
-      `Genre: ${genre_list}\n` +
-      `Director: ${director_list}\n` +
-      `IMDB Rating: ${movie_element.imdbRating}`;
+        if (genre_list.length > 1) {
+          textToSpeech += `"${title_let}" is an ${genre_list} movie, with a cast primarily comprised of ${actor_list}. <break time="0.35s" />`;
+        } else if (genre_list.length == 1) {
+          textToSpeech += `"${title_let}" is an ${genre_list} movie, with a cast primarily comprised of ${actor_list}. <break time="0.35s" />`;
+        } else {
+          textToSpeech += `The cast of "${title_let}" is primarily comprised of ${actor_list}. <break time="0.35s" />`;
+        }
 
-      store_repeat_response(conv, 'itemSelected', textToSpeech, textToDisplay); // Storing repeat info
+        textToSpeech += `It was released in ${movie_element.year}, directed by ${director_list} and has an IMDB rating of ${movie_element.imdbRating} out of 10. <break time="0.35s" /> ` +
+          `Are you interested in watching "${title_let}"?` +
+          `</speak>`;
 
-      chatbase_analytics(
-        conv,
-        `User selected a recommended movie!`, // input_message
-        'item.selected', // input_intent
-        'Win' // win_or_fail
-      );
+        const textToDisplay = `Title: ${title_let}\n` +
+        `Year: ${movie_element.year}\n` +
+        `Genre: ${genre_list}\n` +
+        `Director: ${director_list}\n` +
+        `IMDB Rating: ${movie_element.imdbRating}`;
 
-      conv.ask(
-        new SimpleResponse({
-          // Sending the details to the user
-          speech: textToSpeech,
-          text: textToDisplay
-        })
-      );
+        store_repeat_response(conv, 'itemSelected', textToSpeech, textToDisplay); // Storing repeat info
 
-      if (conv.surface.capabilities.has('actions.capability.SCREEN_OUTPUT')) {
-        conv.ask(
-          new BasicCard({
-            title: `${movie_element.title} (${movie_element.year})`,
-            text: `Plot: ${movie_element.plot}`,
-            buttons: new Button({
-              title: `🍿 Google Play Search`,
-              url: `https://play.google.com/store/search?q=${movie_element.title}&c=movies`,
-            }),
-            image: { // Mostly, you can provide just the raw API objects
-              url: `${(movie_element.poster_url).replace("http://", "https://")}`, // NO HTTP ALLOWED!
-              accessibilityText: `${movie_element.title}`
-            },
-            display: 'WHITE'
-          }),
-          new Suggestions(`👍`, `👎`, `📜 plot spoilers`, '🗳 Rank Movies', '🏆 Show Stats', '📑 Help')
+        chatbase_analytics(
+          conv,
+          `User selected a recommended movie!`, // input_message
+          'item.selected', // input_intent
+          'Win' // win_or_fail
         );
-      }
+
+        conv.ask(
+          new SimpleResponse({
+            // Sending the details to the user
+            speech: textToSpeech,
+            text: textToDisplay
+          })
+        );
+
+        if (conv.surface.capabilities.has('actions.capability.SCREEN_OUTPUT')) {
+          conv.ask(
+            new BasicCard({
+              title: `${movie_element.title} (${movie_element.year})`,
+              text: `Plot: ${movie_element.plot}`,
+              buttons: new Button({
+                title: `🍿 Google Play Search`,
+                url: `https://play.google.com/store/search?q=${movie_element.title}&c=movies`,
+              }),
+              image: { // Mostly, you can provide just the raw API objects
+                url: `${(movie_element.poster_url).replace("http://", "https://")}`, // NO HTTP ALLOWED!
+                accessibilityText: `${movie_element.title}`
+              },
+              display: 'WHITE'
+            }),
+            new Suggestions(`👍`, `👎`, `🎬 more movie info`, `🍿 Watch movie online`, '🗳 Rank Movies', '🏆 Show Stats', '📑 Help')
+          );
+        }
+      });
     }) // END of the GET request!
     .catch(error_message => {
       return catch_error(conv, error_message, 'recommendation');
@@ -2012,17 +2232,15 @@ app.intent('recommend_movie.Fallback', (conv) => {
   Fallback function for the voting mechanisms!
   Change the CAROUSEL_FALLBACK contents if you want different responses.
   */
-  console.log("RECOMMEND FALLBACK TRIGGERED!");
+  //console.log("RECOMMEND FALLBACK TRIGGERED!");
   const recommendation_context = conv.contexts.get('recommend_movie_context');
-  const list_body = conv.contexts.get('list_body');
 
   if (typeof(conv.contexts.get('recommend_movie_context')) !== "undefined" && typeof(conv.contexts.get('list_body')) !== "undefined") {
-  //if (recommendation_context['placeholder'] && list_body['0']) {
-    let carousel = recommendation_context['repeatedCarousel'].value;
 
-    let first_movie = list_body['0'].value; // Grabbing the first movie_element
-    let second_movie = list_body['1'].value; // Grabbing the second movie_element
-    let third_movie = list_body['2'].value; // Grabbing the third movie_element
+    let carousel = recommendation_context['repeatedCarousel'].value;
+    let first_movie = conv.contexts.get('list_body').parameters['0']; // Grabbing the first movie_element
+    let second_movie = conv.contexts.get('list_body').parameters['1']; // Grabbing the second movie_element
+    let third_movie = conv.contexts.get('list_body').parameters['2']; // Grabbing the third movie_element
 
     var CAROUSEL_FALLBACK_DATA;
 
@@ -2215,6 +2433,185 @@ app.intent('goodbye', conv => {
   );
 });
 
+//////////// TESTING:
+
+
+app.intent('where_to_watch', (conv) => {
+  /*
+  Browsing carousel with amazon, google play, youtube, etc hyperlinks - enabling our users to consume content we recommend!
+  Similar to moreMovieInfo!
+  TODO: Dialogflow input movie title/imdbID, not vote contexts.
+  */
+  if (conv.surface.capabilities.has('actions.capability.SCREEN_OUTPUT') && conv.surface.capabilities.has('actions.capability.WEB_BROWSER')) {
+    if (typeof(conv.contexts.get('vote_context')) !== 'undefined') {
+      // vote context exists
+      if (typeof(conv.contexts.get('vote_context').parameters['mode']) !== 'undefined') {
+        // mode exists within vote context
+        conv.data.fallbackCount = 0; // Required for tracking fallback attempts! // Required for tracking fallback attempts!
+
+        const requested_mode = conv.contexts.get('vote_context').parameters['mode']; // Retrieving the expected voting mode (within a list, or during training)!
+        const movie_imdb_id = conv.contexts.get('vote_context').parameters['movie']; // Retrieving the movie we want to downvote!
+        const movie_title = conv.contexts.get('vote_context').parameters['title']; // Retrieving the title
+
+        const fallback_messages = [
+          `Sorry, what was that?`,
+          `Sorry, I didn't catch that, what do you want to do next?`,
+        ];
+
+        var suggestions;
+
+        if (requested_mode === 'list_selection') {
+          suggestions = ['🗳 Rank Movies', `🐐 GOAT Movies`, '🏆 Show Stats', '📑 Help'];
+        } else {
+          suggestions = [`🤔 recommend me a movie`, `🐐 GOAT Movies`, '🏆 Show Stats', '📑 Help'];
+        }
+
+        store_fallback_response(conv, fallback_messages, suggestions);
+
+        conv.contexts.set('vote_context', 1, { // Specifying the data required to vote!
+          "mode": requested_mode,
+          "movie": movie_imdb_id
+        });
+
+        const textToSpeech = `<speak>` +
+          `Try a few of the following links, availability of "${movie_title}" may differ depending on geographic location.` +
+          `</speak>`;
+
+        const textToDisplay = `Try a few of the following links, availability of "${movie_title}" may differ depending on geographic location.`;
+
+        store_repeat_response(conv, 'moreMovieInfo', textToSpeech, textToDisplay); // Storing repeat info
+
+        chatbase_analytics(
+          conv,
+          `Browse Carousel: ${movie_title} (${movie_imdb_id})`, // input_message
+          'where_to_watch', // input_intent
+          'Win' // win_or_fail
+        );
+
+        conv.ask(
+          new SimpleResponse({
+            speech: textToSpeech,
+            text: textToDisplay
+          })
+        );
+
+        const iptv = [
+          /*
+            List of IPTV records.
+            We want to construct outbound carousel items for the user to find the target movie.
+            9 max items.
+          */
+          {
+            'title': 'Google Play',
+            'url': `https://play.google.com/store/search?q=${movie_title}&c=movies`,
+            'img_url': `https://www.gstatic.com/android/market_images/web/play_prism_hlock_2x.png`, //TODO: CHANGE HOTLINK
+            'img_alt': `Google Play logo`,
+            'description': `Potentially available to rent/buy via the Google Play movie store.`,
+            'footer': ``
+          },
+          {
+            'title': 'Netflix',
+            'url': `https://www.netflix.com/search?q=${movie_title}`,
+            'img_url': `https://i.imgur.com/YblTE8T.png`, // TODO: Not use imgur
+            'img_alt': `Netflix logo`,
+            'description': `Potentially available via Netflix subscription.`,
+            'footer': ``
+          },
+          {
+            'title': 'Justwatch',
+            'url': `https://www.justwatch.com/`,
+            'img_url': `https://www.justwatch.com/company/assets/JustWatch-icon.png`,
+            'img_alt': `Justwatch logo`,
+            'description': `Justwatch is an EU funded legal streaming search engine service, saving you time searching!`,
+            'footer': ``
+          },
+          {
+            'title': 'GoWatchIt',
+            'url': `https://gowatchit.com/search?terms=${movie_title}`,
+            'img_url': `https://i.imgur.com/nJc4F4I.png`,
+            'img_alt': `GoWatchIt logo`,
+            'description': `GoWatchIt (US-only) provides movie search across many services.`,
+            'footer': ``
+          },
+          {
+            'title': 'ReelGood',
+            'url': `https://reelgood.com/search?q=${movie_title}`,
+            'img_url': `https://i.imgur.com/e2gDcVK.png`,
+            'img_alt': `ReelGood logo`,
+            'description': `Search engine for streaming content.`,
+            'footer': ``
+          },
+          {
+            'title': 'Amazon Prime',
+            'url': `https://www.amazon.co.uk/s/?url=search-alias%3Dprime-instant-video&field-keywords=${movie_title}`,
+            'img_url': `https://m.media-amazon.com/images/G/02/digital/video/New_MLP/Prime_Smile_logo_133x80.png`,
+            'img_alt': `Amazon Prime logo`,
+            'description': `Potentially available to rent/buy or view for free through Prime subscription.`,
+            'footer': ``
+          },
+          {
+            'title': 'Google search',
+            'url': `https://www.google.com/search?q=watch+${movie_title}+online`,
+            'img_url': `https://i.imgur.com/1hjxlJ5.png`,
+            'img_alt': `Google logo`,
+            'description': `Perform a google search.`,
+            'footer': ``
+          }
+        ];
+
+        //let movie_list = []; // Where we'll store the list elements
+        let carousel_items = []; // Creating carousel item holder
+
+        for (let iterator = 0; iterator < iptv.length; iterator++) { // Iterating over the top k rec_body results!
+          if (iterator > 9) {
+             // Can't place more than 10 items in the carousel!
+            break;
+          } else {
+            //const index_value = iterator.toString(); // Creating string representation of index for context data
+
+            carousel_items[iterator] = new BrowseCarouselItem({
+              'title': iptv[iterator]['title'],
+              'url': iptv[iterator]['url'],
+              'description': iptv[iterator]['description'],
+              'image': new Image({
+                'url': iptv[iterator]['img_url'],
+                'alt': iptv[iterator]['img_alt'],
+              }),
+              'footer': iptv[iterator]['footer']
+            })
+          }
+        }
+
+        conv.ask(new BrowseCarousel({
+          items: carousel_items
+        }));
+
+        conv.ask(
+          new Suggestions(suggestions)
+        );
+      } else {
+        /*
+        No mode is present (shouldn't occur)
+        */
+        return catch_error(conv, 'No "mode" detected!', 'moreMovieInfo');
+      }
+    } else {
+      /*
+      The 'vote_context' context is not present.
+      */
+      return catch_error(conv, 'No "vote_context" detected!', 'moreMovieInfo');
+    }
+  } else {
+    conv.close(
+      new SimpleResponse({
+        speech: '<speak>Sorry, this function requires both screen and web browser functionality. Please switch device, or try Googling where to watch this movie.</speak>',
+        text: 'Sorry, this function requires both screen and web browser functionality. Please switch device, or try Googling where to watch this movie.'
+      })
+    );
+  }
+});
+
+
 //////////// Fallback Intents
 
 /*
@@ -2240,6 +2637,7 @@ app.intent('input.unknown', conv => {
       Both contexts and conv.data expire after a certain period of inactivity.
     */
     conv.data.fallbackCount = 0 // Set the fallback to 0, enabling genericFallback to work
+
     if (conv.user.storage.last_intent_name === "item.selected" | conv.user.storage.last_intent_name === "Training") {
       var movieGenre;
 
@@ -2257,8 +2655,6 @@ app.intent('input.unknown', conv => {
     conv.data.fallback_speech_1 = "<speak>I didn't catch that. Do you want to rank movies, receive movie recommendations, view your leaderboard position or discover the GOAT movies?</speak>";
     conv.data.suggesions = ['🗳 Rank Movies', '🤔 Movie Recommendation', '🏆 Show Stats', `🚪 Quit`];
   }
-
-  console.log(`dots: ${conv.data.fallback_text_0}, suggestions: ${conv.data.suggestions}`);
 
   chatbase_analytics(
     conv,

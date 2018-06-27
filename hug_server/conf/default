@@ -1,0 +1,88 @@
+server {
+  #listen 4242 deferred;
+  listen 443 ssl;
+  server_name staging.domain.tld
+
+  allow 35.190.224.0/20;
+  allow 35.232.0.0/15;
+  allow 35.234.0.0/16;
+  allow 35.235.0.0/17;
+  allow 35.235.192.0/20;
+  allow 35.236.0.0/14;
+  allow 35.240.0.0/16;
+  allow 35.241.0.0/17;
+  allow 35.203.232.0/21;
+  allow 130.211.4.0/22;
+  allow 35.220.0.0/16;
+  allow 35.242.0.0/17;
+  allow 8.34.208.0/20;
+  allow 8.35.192.0/21;
+  allow 8.35.200.0/23;
+  allow 108.59.80.0/20;
+  allow 108.170.192.0/20;
+  allow 108.170.208.0/21;
+  allow 108.170.216.0/22;
+  allow 108.170.220.0/23;
+  allow 108.170.222.0/24;
+  allow 35.224.0.0/13;
+  allow 162.216.148.0/22;
+  allow 162.222.176.0/21;
+  allow 173.255.112.0/20;
+  allow 192.158.28.0/22;
+  allow 199.192.112.0/22;
+  allow 199.223.232.0/22;
+  allow 199.223.236.0/23;
+  allow 23.236.48.0/20;
+  allow 23.251.128.0/19;
+  allow 35.204.0.0/14;
+  allow 35.208.0.0/14;
+  allow 107.167.160.0/19;
+  allow 107.178.192.0/18;
+  allow 146.148.2.0/23;
+  allow 146.148.4.0/22;
+  allow 146.148.8.0/21;
+  allow 146.148.16.0/20;
+  allow 146.148.32.0/19;
+  allow 146.148.64.0/18;
+  allow 35.203.0.0/17;
+  allow 35.203.128.0/18;
+  allow 35.203.192.0/19;
+  allow 35.203.240.0/20;
+  allow 130.211.8.0/21;
+  allow 130.211.16.0/20;
+  allow 130.211.32.0/19;
+  allow 130.211.64.0/18;
+  allow 130.211.128.0/17;
+  allow 104.154.0.0/15;
+  allow 104.196.0.0/14;
+  allow 208.68.108.0/23;
+  allow 35.184.0.0/14;
+  allow 35.188.0.0/15;
+  allow 35.202.0.0/16;
+  allow 35.190.0.0/17;
+  allow 35.190.128.0/18;
+  allow 35.190.192.0/19;
+  allow 35.235.224.0/20;
+  allow 35.192.0.0/14;
+  allow 35.196.0.0/15;
+  allow 35.198.0.0/16;
+  allow 35.199.0.0/17;
+  allow 35.199.128.0/18;
+  allow 35.200.0.0/15;
+  allow 78.110.163.197;
+  allow 78.157.209.74;
+  deny all;
+
+  client_max_body_size 4G;
+  keepalive_timeout 5;
+
+  location / {
+    proxy_set_header Host $host;
+    proxy_pass http://unix:/home/ubuntu/hug.sock;
+
+    ## DISABLED:
+    #include proxy_params;
+    #proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    #proxy_redirect off;
+  }
+}
