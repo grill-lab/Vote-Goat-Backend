@@ -92,9 +92,9 @@ def create_user(gg_id: hug.types.text, api_key: hug.types.text, hug_timer=5):
 		return {'valid_key': False,
 				'took': float(hug_timer)}
 
-@hug.post(examples='gg_id=anonymous_google_id&movie_id=tt000001&rating=0&mode=training&api_key=API_KEY')
-@hug.get(examples='gg_id=anonymous_google_id&movie_id=tt000001&rating=0&mode=training&api_key=API_KEY')
-def submit_movie_rating(gg_id: hug.types.text, movie_id: hug.types.text, rating: hug.types.number, mode: hug.types.text, api_key: hug.types.text, hug_timer=5):
+@hug.post(examples='gg_id=anonymous_google_id&movie_id=tt000001&rating=0&mode=training&conv_id=12345&raw_vote=RAW_VOTE&api_key=API_KEY')
+@hug.get(examples='gg_id=anonymous_google_id&movie_id=tt000001&rating=0&mode=training&conv_id=12345&raw_vote=RAW_VOTE&api_key=API_KEY')
+def submit_movie_rating(gg_id: hug.types.text, movie_id: hug.types.text, rating: hug.types.number, mode: hug.types.text, conv_id: hug.types.number, raw_vote: hug.types.text, api_key: hug.types.text, hug_timer=5):
 	"""
 	Submitting an user movie rating to mongodb.
 	URL: http://HOST:PORT/submit_movie_rating?gg_id=anonymous_google_id&movie_id=tt000001&rating=1&api_key=API_KEY
@@ -112,7 +112,9 @@ def submit_movie_rating(gg_id: hug.types.text, movie_id: hug.types.text, rating:
 
 			if (result == 0):	# User hasn't rated this movie yet.
 				movie_genres = db.movie.find({"imdbID": movie_id})['genre'] # Including the movie genres in the user ratings for ML movie recommendations
-				db.user_ratings.insert_one({"userId": user_id, "imdbID": movie_id, "rating": rating, "genres": movie_genres})
+				db.user_ratings.insert_one({"userId": user_id, "imdbID": movie_id, "rating": rating, "genres": movie_genres, "timestamp": timestamp, "conversation_id": conv_id, "raw_vote": raw_vote})
+
+				user_genre_tally_data = db.user_genre_vote_tally.find({"userId": user_id})
 
 				if (rating == 1):
 					db.Users.update_one({"userId": user_id, "gg_id": gg_id}, {"$inc": {"total_movie_votes": 1, "total_movie_upvotes": 1}}) # Updating the user's voting stats
@@ -120,6 +122,19 @@ def submit_movie_rating(gg_id: hug.types.text, movie_id: hug.types.text, rating:
 				else:
 					db.Users.update_one({"userId": user_id, "gg_id": gg_id}, {"$inc": {"total_movie_votes": 1, "total_movie_downvotes": 1}}) # Updating the user's voting stats
 					db.movie.update_one({"imdbID": movie_id}, {"$inc": {"goat_downvotes": 1, "total_goat_votes": 1}}) # Updating the movie's voting stats
+
+			    inc_object = {}
+			    for genre in movie_genres: # Tallying genre voting data
+			        if rating == 1:
+			            direction = 'up'
+			        else:
+			            direction = 'down'
+
+			        target = str(genre)+'.'+direction
+			        inc_object[target] = 1
+
+			    db.user_genre_vote_tally.update_one({"userId": rating['userId']}, {"$inc": json.loads(json.dumps(inc_object))})
+
 				return {'success': True,
 						'valid_key': True,
 						'took': float(hug_timer)}
