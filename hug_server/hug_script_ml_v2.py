@@ -94,21 +94,7 @@ def movie_recommendation(genres: hug.types.text, gg_id: hug.types.text, api_key:
 
                 # Implemented Vote Goat genre names
                 # TODO: Allocate IDs to the following genres
-                Genres = ['Action','Adventure','Animation','Biography','Comedy','Crime','Documentary','Drama','Family','Fantasy','Film-Noir','Horror','Musical','Mystery','Romance','Sci-Fi','Short','Sport','Thriller','War','Western']
-
-                Genre_Dict = {}
-
-                for i in range(len(Genres))
-                    """
-                    Creating a dict for matching genre string to id & keeping track of genre ratings
-                    output: ['id': {'name': name, 'upvotes': x, 'downvotes': y}]
-                    """
-                    iterator = str(i)
-                    Genre_Dict[iterator] = {
-                    'name': Genres[i],
-                    'upvotes': 0,
-                    'downvotes': 0
-                    }
+                Genres = ['Action','Adventure','Animation','Biography','Comedy','Crime','Documentary','Drama','Family','Fantasy','Film-Noir','Horror', 'Music', 'Musical','Mystery', 'News', 'Romance','Sci-Fi','Short','Sport','Thriller','War','Western']
 
                 """
                 # NOTE: Movielens movie rating dataset uses different id from IMDB.
@@ -122,23 +108,16 @@ def movie_recommendation(genres: hug.types.text, gg_id: hug.types.text, api_key:
                 QUERY_RATED_MOVIE_SCORES = [] # [1, 0, ...]
 
                 # The set of genres of the rated movies.
-                # @Jeff: Is this supposed to be a count of genre occurrence, or (up/up+down) type formula?
-                # QUERY_RATED_GENRE_IDS = 'query_rated_genre_ids' # TODO: ID? 'genre' || '001' # [1, 2, ...]
+                # TODO: QUERY_RATED_GENRE_IDS - existing IDs for genres in ML? Or can we sort by alphabetical order then just get the index in list as genre Id?
 
                 QUERY_RATED_GENRE_IDS = range(len(Genres)) # Is this just supposed to be the Genre IDs?
 
                 for rating_entry in rating_training:
                     """
-                    Extracting information from retrieved ratings, stored into lists & dict.
+                    Extracting information from retrieved ratings
                     """
                     QUERY_RATED_MOVIE_IDS.append(rating_entry['imdbID'])
                     QUERY_RATED_MOVIE_SCORES.append(rating_entry['rating'])
-
-                    for rated_movie_genres in rating_entry['genres']:
-                        if (rating_entry['rating'] == 1):
-                            Genre_Dict[str(rated_movie_genres)]['upvotes']++
-                        else:
-                            Genre_Dict[str(rated_movie_genres)]['downvotes']++
 
                 QUERY_RATED_MOVIE_IDS = list(map(links_dict.get, QUERY_RATED_MOVIE_IDS)) # Converting IMDBIds to Mobielens Ids
 
@@ -147,12 +126,14 @@ def movie_recommendation(genres: hug.types.text, gg_id: hug.types.text, api_key:
                 # The average rating on each genre.
                 QUERY_RATED_GENRE_AVG_SCORES = [] # TODO: Average rating between 0 & 1, or upvotes/upvotes+downvotes ? # Assume: [int, int, ...]
 
-                for i in range(len(Genre_Dict)):
+                user_vote_tallies = db.user_genre_vote_tally.find({"userId": QUERY_USER_ID})
+
+                for genre in Genres:
                     """
                     By this point we've analyzed the user's ratings, outputting genre freqs & avg score (up/up+down)
                     """
-                    upvotes = Genre_Dict[str(i)]['upvotes']
-                    downvotes = Genre_Dict[str(i)]['upvotes']
+                    upvotes = user_vote_tallies[genre]['up']
+                    downvotes = user_vote_tallies[genre]['down']
                     total_votes = upvotes + downvotes
                     QUERY_RATED_GENRE_FREQS.append(total_votes)
                     QUERY_RATED_GENRE_AVG_SCORES.append(upvotes/total_votes)
@@ -192,7 +173,8 @@ def movie_recommendation(genres: hug.types.text, gg_id: hug.types.text, api_key:
                     else if ((genres == ' ') | (genres == '%20')):
                         # No genres input
                     	results = list(db.movie.find().limit(10).skip(randrange(0, result_count))) # .sort([('imdbVotes', -1), ('imdbRating', -1)])
-                    	results = sorted(results, key=operator.itemgetter('imdbVotes', 'imdbRating'), reverse=True) # Sort the list of dicts.
+
+                    results = sorted(results, key=operator.itemgetter('imdbVotes', 'imdbRating'), reverse=True) # Sort the list of dicts.
 
                 	recomended_movie_ids = []
 

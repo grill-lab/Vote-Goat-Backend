@@ -111,14 +111,15 @@ def submit_movie_rating(gg_id: hug.types.text, movie_id: hug.types.text, rating:
 				db.recommendation_history.update_one({"userId": user_id, "k_mov_timestamp": latest_usr_rec_ts}, {"$set": {"voted": rating}}) # Recording the user's vote within the recommendation section
 
 			if (result == 0):	# User hasn't rated this movie yet.
-				db.user_ratings.insert_one({"userId": user_id, "imdbID": movie_id, "rating": rating})
+				movie_genres = db.movie.find({"imdbID": movie_id})['genre'] # Including the movie genres in the user ratings for ML movie recommendations
+				db.user_ratings.insert_one({"userId": user_id, "imdbID": movie_id, "rating": rating, "genres": movie_genres})
 
 				if (rating == 1):
-					db.Users.update_one({"userId": user_id, "gg_id": gg_id,}, {"$inc": {"total_movie_votes": 1, "total_movie_upvotes": 1}})
-					db.movie.update_one({"imdbID": movie_id}, {"$inc": {"goat_upvotes": 1, "total_goat_votes": 1}})
+					db.Users.update_one({"userId": user_id, "gg_id": gg_id}, {"$inc": {"total_movie_votes": 1, "total_movie_upvotes": 1}}) # Updating the user's voting stats
+					db.movie.update_one({"imdbID": movie_id}, {"$inc": {"goat_upvotes": 1, "total_goat_votes": 1}}) # Updating the movie's voting stats
 				else:
-					db.Users.update_one({"userId": user_id, "gg_id": gg_id,}, {"$inc": {"total_movie_votes": 1, "total_movie_downvotes": 1}})
-					db.movie.update_one({"imdbID": movie_id}, {"$inc": {"goat_downvotes": 1, "total_goat_votes": 1}})
+					db.Users.update_one({"userId": user_id, "gg_id": gg_id}, {"$inc": {"total_movie_votes": 1, "total_movie_downvotes": 1}}) # Updating the user's voting stats
+					db.movie.update_one({"imdbID": movie_id}, {"$inc": {"goat_downvotes": 1, "total_goat_votes": 1}}) # Updating the movie's voting stats
 				return {'success': True,
 						'valid_key': True,
 						'took': float(hug_timer)}
