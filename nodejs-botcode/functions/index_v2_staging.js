@@ -2435,7 +2435,6 @@ app.intent('goodbye', conv => {
 
 //////////// TESTING:
 
-
 app.intent('where_to_watch', (conv) => {
   /*
   Browsing carousel with amazon, google play, youtube, etc hyperlinks - enabling our users to consume content we recommend!
