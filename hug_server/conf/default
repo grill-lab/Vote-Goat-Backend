@@ -78,7 +78,7 @@ server {
 
   location / {
     proxy_set_header Host $host;
-    proxy_pass http://unix:/home/ubuntu/hug.sock;
+    proxy_pass http://unix:/home/hugapi/hug.sock;
 
     ## DISABLED:
     #include proxy_params;

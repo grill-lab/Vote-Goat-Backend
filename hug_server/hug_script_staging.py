@@ -11,6 +11,44 @@ from operator import itemgetter
 client = MongoClient("MONGODB_SEVER_DETAILS")
 db = client.popcorndb
 
+###########
+
+def google_analytics(request, function_name):
+	"""
+	# Tracking usage via Google Analytics (using the measurement protocol).
+	# Why? Because the only insight into the use of HUG currently is the access & error logs (insufficient).
+	"""
+	google_analytics_code = 'GOOGLE_ANALYTICS_CODE'
+	user_agent = str(request.user_agent)
+	user_source = str(request.referer)
+	user_request = str(request.uri)
+
+	headers = {'User-Agent': user_agent}
+
+	payload = { 'v': 1,
+				'an': 'HUG',
+				'tid': google_analytics_code,
+				'cid': str(uuid.uuid4()),
+				't': 'pageview',
+				'ec': 'HUG',
+				'ds': 'HUG',
+				'el': 'HUG',
+				'ea': 'Action',
+				'dr': user_source,
+				'de': 'JSON',
+				'ua': user_agent,
+				'dt': function_name,
+				'dl': user_request,
+				'ev': 0}
+
+	try:
+		r = requests.post('https://www.google-analytics.com/collect', params=payload, headers=headers)
+	#	r = requests.post('www.google-analytics.com/collect', data=payload) # Either data or params
+	except:
+		print("COULD NOT POST TO GOOGLE ANALYTICS!")
+
+########### Helper functions
+
 def generate_ml_id():
 	"""
 	Generate a new ID which will be compatible with the machine learning components.
@@ -64,7 +102,7 @@ def check_api_token(api_key):
 
 @hug.post(examples='gg_id=anonymous_google_id&api_key=API_KEY')
 @hug.get(examples='gg_id=anonymous_google_id&api_key=API_KEY')
-def create_user(gg_id: hug.types.text, api_key: hug.types.text, hug_timer=5):
+def create_user(gg_id: hug.types.text, api_key: hug.types.text, request, hug_timer=5):
 	"""
 	Creating an user in the mongodb database.
 	URL: http://HOST:PORT/create_user?gg_id=anonymous_google_id&api_key=API_KEY
@@ -79,22 +117,24 @@ def create_user(gg_id: hug.types.text, api_key: hug.types.text, hug_timer=5):
 			user_name = ""
 
 			db.Users.insert_one({"gg_id": gg_id, "name": user_name, "userId": ml_id, "total_movie_votes": 0, "total_movie_upvotes": 0, "total_movie_downvotes": 0, "ab_testing": 0})
-
+			google_analytics(request, 'create_user_success')
 			return {'user_existed': False,
 					'created_user': True,
 					'took': float(hug_timer)}
 		else:
+			google_analytics(request, 'create_user_existed')
 			return {'user_existed': True,
 					'created_user': False,
 					'took': float(hug_timer)}
 	else:
 		# API KEY INVALID!
+		google_analytics(request, 'create_user_apikey_error')
 		return {'valid_key': False,
 				'took': float(hug_timer)}
 
 @hug.post(examples='gg_id=anonymous_google_id&movie_id=tt000001&rating=0&mode=training&conv_id=12345&raw_vote=RAW_VOTE&api_key=API_KEY')
 @hug.get(examples='gg_id=anonymous_google_id&movie_id=tt000001&rating=0&mode=training&conv_id=12345&raw_vote=RAW_VOTE&api_key=API_KEY')
-def submit_movie_rating(gg_id: hug.types.text, movie_id: hug.types.text, rating: hug.types.number, mode: hug.types.text, conv_id: hug.types.number, raw_vote: hug.types.text, api_key: hug.types.text, hug_timer=5):
+def submit_movie_rating(gg_id: hug.types.text, movie_id: hug.types.text, rating: hug.types.number, mode: hug.types.text, conv_id: hug.types.number, raw_vote: hug.types.text, request, api_key: hug.types.text, hug_timer=5):
 	"""
 	Submitting an user movie rating to mongodb.
 	URL: http://HOST:PORT/submit_movie_rating?gg_id=anonymous_google_id&movie_id=tt000001&rating=1&api_key=API_KEY
@@ -134,29 +174,32 @@ def submit_movie_rating(gg_id: hug.types.text, movie_id: hug.types.text, rating:
 			        inc_object[target] = 1
 
 			    db.user_genre_vote_tally.update_one({"userId": rating['userId']}, {"$inc": json.loads(json.dumps(inc_object))})
-
+				google_analytics(request, 'submit_movie_rating_success')
 				return {'success': True,
 						'valid_key': True,
 						'took': float(hug_timer)}
 			else: # Rating already exists!
 				# Overwrite rating entry using update_one & $set
 				db.user_ratings.update_one({"userId": user_id, "imdbID": movie_id}, {"$set": {"rating": rating}})
+				google_analytics(request, 'submit_movie_rating_overwritten')
 				return {'success': False,
 						'valid_key': True,
 						'took': float(hug_timer)}
 		else:
 			# No gg_id found
+			google_analytics(request, 'submit_movie_rating_id_error')
 			return {'success': False,
 					'valid_key': True,
 					'took': float(hug_timer)}
 	else:
 		# API KEY INVALID!
+		google_analytics(request, 'submit_movie_rating_apikey_error')
 		return {'success': False,
 				'valid_key': False,
 				'took': float(hug_timer)}
 
 @hug.get(examples='gg_id=anonymous_google_id&api_key=API_KEY')
-def get_user_ranking(gg_id: hug.types.text, api_key: hug.types.text, hug_timer=5):
+def get_user_ranking(gg_id: hug.types.text, api_key: hug.types.text, request, hug_timer=5):
 	"""
 	Retrieve the user's leaderboard rankings!
 	"""
@@ -169,6 +212,8 @@ def get_user_ranking(gg_id: hug.types.text, api_key: hug.types.text, hug_timer=5
 			leaderboard_position = leaderboard.index(user_result) + 1 # Trying to get the user's leaderboard position
 			quantity_users = db.Users.find().count()
 
+			google_analytics(request, 'get_user_ranking_success')
+
 			return {'total_movie_votes': user_result['total_movie_votes'],
 					'total_movie_upvotes': user_result['total_movie_upvotes'],
 					'total_movie_downvotes': user_result['total_movie_downvotes'],
@@ -179,17 +224,19 @@ def get_user_ranking(gg_id: hug.types.text, api_key: hug.types.text, hug_timer=5
 					'took': float(hug_timer)}
 		else:
 			# Invalid gg_id
+			google_analytics(request, 'get_user_ranking_id_error')
 			return {'success': False,
 					'valid_key': True,
 					'took': float(hug_timer)}
 	else:
 		# API KEY INVALID!
+		google_analytics(request, 'get_user_ranking_apikey_error')
 		return {'success': False,
 				'valid_key': False,
 				'took': float(hug_timer)}
 
 @hug.get(examples='gg_id=anonymous_google_id&api_key=API_KEY')
-def get_user_code(gg_id: hug.types.text, api_key: hug.types.text, hug_timer=5):
+def get_user_code(gg_id: hug.types.text, api_key: hug.types.text, request, hug_timer=5):
 	"""
 	Retrieving the user's 'pincode' for the survey.
 	The pincode is simply their userID.
@@ -200,22 +247,25 @@ def get_user_code(gg_id: hug.types.text, api_key: hug.types.text, hug_timer=5):
 		temp_code = get_user_id_by_gg_id(gg_id) # Convert gg_id to their incremental user_ratings userID.
 
 		if temp_code is not None:
+			google_analytics(request, 'get_user_code_success')
 			return {'code': str(temp_code),
 					'success': True,
 					'valid_key': True,
 					'took': float(hug_timer)}
 		else:
+			google_analytics(request, 'get_user_code_id_error')
 			return {'success': False,
 					'valid_key': True,
 					'took': float(hug_timer)}
 	else:
 		# API KEY INVALID!
+		google_analytics(request, 'get_user_code_apikey_error')
 		return {'success': False,
 				'valid_key': False,
 				'took': float(hug_timer)}
 
 @hug.get(examples='gg_id=anonymous_google_id&api_key=API_KEY')
-def get_user_ratings(gg_id: hug.types.text, api_key: hug.types.text, hug_timer=5):
+def get_user_ratings(gg_id: hug.types.text, api_key: hug.types.text, request, hug_timer=5):
 	"""
 	Retrieve a list of the user's rated movies, for use in the NN based recommendation system.
 	Input: User's anonymous google id. Output: List of movie ratings by user.
@@ -233,19 +283,23 @@ def get_user_ratings(gg_id: hug.types.text, api_key: hug.types.text, hug_timer=5
 				combined_json_list.append({"userID": result['userId'], "imdbID": result['imdbID'], "rating": result['rating']}) # Append to the list
 
 			if (len(combined_json_list) > 0): # Check the quantity of results
+				google_analytics(request, 'get_user_ratings_success')
 				return combined_json_list # More than one result retrieved
 			else:
 				# User hasn't rated any movies
+				google_analytics(request, 'get_user_ratings_fail_no_ratings')
 				return {'success': False,
 						'valid_key': True,
 						'took': float(hug_timer)}
 		else:
 			# gg_id is invalid!
+			google_analytics(request, 'get_user_ratings_id_error')
 			return {'success': False,
 					'valid_key': True,
 					'took': float(hug_timer)}
 	else:
 		# API KEY INVALID!
+		google_analytics(request, 'get_user_ratings_apikey_error')
 		return {'success': False,
 				'valid_key': False,
 				'took': float(hug_timer)}
@@ -263,7 +317,7 @@ def build_training_response(mongodb_result, hug_timer, remaining_count):
 			'took': float(hug_timer)}
 
 @hug.get(examples='gg_id=anonymous_google_id&sort_target=imdbVotes&sort_direction=DESCENDING&genres=horror,drama&actors=actor_one,actor_two,actor_three&api_key=API_KEY')
-def get_single_training_movie(gg_id: hug.types.text, sort_target: hug.types.text, sort_direction: hug.types.text, genres: hug.types.text, actors: hug.types.text, api_key: hug.types.text, hug_timer=5):
+def get_single_training_movie(gg_id: hug.types.text, sort_target: hug.types.text, sort_direction: hug.types.text, genres: hug.types.text, actors: hug.types.text, api_key: hug.types.text, request, hug_timer=5):
 	"""
 	Get a single movie for the training bot section.
 	Retrieves a list of movies the user has previously voted for, used as a filter!
@@ -274,6 +328,7 @@ def get_single_training_movie(gg_id: hug.types.text, sort_target: hug.types.text
 
 		allowed_targets = ['imdbVotes', 'imdbRating', 'released', 'imdbID', 'title']
 		if (sort_target not in allowed_targets):
+			google_analytics(request, 'get_single_training_movie_invalid_target')
 			return {'success': False,
 					'error_message': 'Selected target not allowed yet. Create mongodb index then add to the "allowed_targets" list. Allowed: imdbVotes imdbRating released imdbID title.',
 					'valid_key': True,
@@ -313,21 +368,25 @@ def get_single_training_movie(gg_id: hug.types.text, sort_target: hug.types.text
 				else:
 					result = (db.movie.find({'imdbID': {'$nin': imdb_list}}, {'_id': False}).sort(sort_target, sorting).limit(1))[0]
 
+				google_analytics(request, 'get_single_training_movie_success')
 				return build_training_response(result, hug_timer, remaining_count)
 			else:
 				# No movie results!
+				google_analytics(request, 'get_single_training_movie_no_movies_found')
 				return {'success': False,
 						'error_message': 'Found no movies (remaining count == 0)',
 						'valid_key': True,
 						'took': float(hug_timer)}
 		else:
 			# Invalid GG_ID
+			google_analytics(request, 'get_single_training_movie_id_error')
 			return {'success': False,
 					'error_message': 'Invalid UserId',
 					'valid_key': True,
 					'took': float(hug_timer)}
 	else:
 		# API KEY INVALID!
+		google_analytics(request, 'get_single_training_movie_apikey_error')
 		return {'success': False,
 				'valid_key': False,
 				'took': float(hug_timer)}
@@ -336,7 +395,7 @@ def get_single_training_movie(gg_id: hug.types.text, sort_target: hug.types.text
 
 @hug.post(examples='gg_id=anonymous_google_id&k_mov_ts=12345.123&clicked_movie=tt000001&api_key=API_KEY')
 @hug.get(examples='gg_id=anonymous_google_id&k_mov_ts=12345.123&clicked_movie=tt000001&api_key=API_KEY')
-def log_clicked_item(gg_id: hug.types.text, k_mov_ts: hug.types.number, clicked_movie: hug.types.text, api_key: hug.types.text, hug_timer=5):
+def log_clicked_item(gg_id: hug.types.text, k_mov_ts: hug.types.number, clicked_movie: hug.types.text, api_key: hug.types.text, request, hug_timer=5):
 	"""
 	input: gg_id, api_key & k_mov_ts (timestamp of recommendation session)
 	output: confirmation (post)
@@ -347,22 +406,25 @@ def log_clicked_item(gg_id: hug.types.text, k_mov_ts: hug.types.number, clicked_
 		user_id = get_user_id_by_gg_id(gg_id) # Get the user's movie rating user ID
 		if user_id is not None:
 			db.recommendation_history.update_one({"userId": user_id, "k_mov_timestamp": k_mov_ts}, {"$set": {"clicked_movie_IDs": clicked_movie}})
+			google_analytics(request, 'log_clicked_item_success')
 			return {'success': True,
 					'valid_key': True,
 					'took': float(hug_timer)}
 		else:
 			# Invalid GG_ID
+			google_analytics(request, 'log_clicked_item_id_error')
 			return {'success': True,
 					'valid_key': True,
 					'took': float(hug_timer)}
 	else:
 		# API KEY INVALID!
+		google_analytics(request, 'log_clicked_item_apikey_error')
 		return {'success': False,
 				'valid_key': False,
 				'took': float(hug_timer)}
 
 @hug.get(examples='gg_id=anonymous_google_id&api_key=API_KEY')
-def get_random_movie_list(gg_id: hug.types.text, api_key: hug.types.text, hug_timer=5):
+def get_random_movie_list(gg_id: hug.types.text, api_key: hug.types.text, request, hug_timer=5):
 	"""
 	Input: gg_id, api_key
 	Output: Ten random movies.
@@ -402,23 +464,26 @@ def get_random_movie_list(gg_id: hug.types.text, api_key: hug.types.text, hug_ti
 
 			db.recommendation_history.insert_one({"userId": user_id, "k_movie_list": imdbID_list, "NN_ID": NN_ID, "k_mov_timestamp": timestamp, "clicked_movie_IDs": clicked_movie_IDs, "voted": voting_intention})
 
+			google_analytics(request, 'get_random_movie_list_success')
 			return {'movies': combined_json_list,
 					 'success': True,
 					 'valid_key': True,
 					 'took': float(hug_timer)}
 		else:
 			# INVALID GG_ID
+			google_analytics(request, 'get_random_movie_list_id_error')
 			return {'success': False,
 					'valid_key': True,
 					'took': float(hug_timer)}
 	else:
 		# API KEY INVALID!
+		google_analytics(request, 'get_random_movie_list_apikey_error')
 		return {'success': False,
 				'valid_key': False,
 				'took': float(hug_timer)}
 
 @hug.get(examples='gg_id=anonymous_google_id&api_key=API_KEY')
-def get_ab_value(gg_id: hug.types.text, api_key: hug.types.text, hug_timer=5):
+def get_ab_value(gg_id: hug.types.text, api_key: hug.types.text, request, hug_timer=5):
 	"""
 	Input: gg_id, api_key
 	Output: The AB testing option (for switching between RND/NN recommendations)
@@ -434,12 +499,15 @@ def get_ab_value(gg_id: hug.types.text, api_key: hug.types.text, hug_timer=5):
 			else:
 				db.Users.update_one({"gg_id": gg_id}, {"$set": {"ab_testing": 0}})
 
+			google_analytics(request, 'get_ab_value_success')
 			return {'success': True, 'valid_key': True, 'ab_value': ab_value, 'took': float(hug_timer)}
 		else:
 			# GG_ID is invalid!
+			google_analytics(request, 'get_ab_value_id_error')
 			return {'success': False, 'valid_key': True, 'took': float(hug_timer)}
 	else:
 		# API KEY INVALID!
+		google_analytics(request, 'get_ab_value_apikey_error')
 		return {'success': False, 'valid_key': False, 'took': float(hug_timer)}
 
 #########################
@@ -475,7 +543,7 @@ def build_movie_json(mongodb_result, hug_timer):
 	return combined_json_list
 
 @hug.get(examples='genres=horror drama&api_key=API_KEY')
-def get_goat_movies(genres: hug.types.text, api_key: hug.types.text, hug_timer=5):
+def get_goat_movies(genres: hug.types.text, api_key: hug.types.text, request, hug_timer=5):
 	"""
 	Get a list of the most upvoted (GOAT) movies.
 	Input: gg_id, genres, api_key
@@ -519,6 +587,7 @@ def get_goat_movies(genres: hug.types.text, api_key: hug.types.text, hug_timer=5
 					result = list(db.movie.find({"genre": genres}).sort([('goat_upvotes', -1)]))[:k_limit]
 			else:
 				# No results, provide json result for nodejs to detect!
+				google_analytics(request, 'get_goat_movies_no_movies_found')
 				return {'success': False,
 						'valid_key': True,
 						'took': float(hug_timer)}
@@ -526,6 +595,7 @@ def get_goat_movies(genres: hug.types.text, api_key: hug.types.text, hug_timer=5
 		goat_movies = build_movie_json(result, hug_timer)
 		sorted_goat_movies = sorted(goat_movies, key=itemgetter('goat_score'), reverse=True)
 
+		google_analytics(request, 'get_goat_movies_success')
 		return {'goat_movies': sorted_goat_movies,
 				'success': True,
 				'valid_key': True,
@@ -533,6 +603,7 @@ def get_goat_movies(genres: hug.types.text, api_key: hug.types.text, hug_timer=5
 
 	else:
 		# API KEY INVALID!
+		google_analytics(request, 'get_goat_movies_apikey_error')
 		return {'success': False,
 				'valid_key': False,
 				'took': float(hug_timer)}
