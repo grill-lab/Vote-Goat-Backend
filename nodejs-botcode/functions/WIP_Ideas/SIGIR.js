@@ -28,12 +28,12 @@ app.intent('SIGIR', conv => {
       */
       textToSpeech = `<speak>` +
         `We're proud to demonstrate Vote Goat at SIGIR 2018!` +
-        `Your ratings are being included in the SIGIR-only 'GOAT' movie lists!` +
+        `Enabled SIGIR 2018 mode. Vote during the SIGIR conference to create this year's SIGIR 'GOAT' movies!` +
         `What next?` +
         `</speak>`;
 
       textToDisplay = `We're proud to demonstrate Vote Goat at SIGIR 2018!` +
-                      `Your ratings are being included in the SIGIR-only 'GOAT' movie lists.` +
+                      `SIGIR 2018 mode already enabled. Remember to vote during the conference to decide this year's SIGIR 'GOAT' movies!` +
                       `What next?`;
     } else {
       /*
@@ -50,7 +50,7 @@ app.intent('SIGIR', conv => {
                       `What next?`;
     }
 
-    suggestions = ['🗳 Rank Movies', '🤔 Movie Recommendation', '🏆 Show Stats', `🎥 SIGIR Movies`, `🐐 GOAT Movies`, '📑 Help', `🚪 Quit`];
+    suggestions = ['🗳 Rank Movies', '🤔 Movie Recommendation', `🎥 SIGIR Movies`, `🐐 GOAT Movies`, '🏆 Show Stats', '📑 Help', `🚪 Quit`];
     conv.user.storage.sigir = 1
 
   } else if (current_time < 1531033200) {
@@ -72,7 +72,8 @@ app.intent('SIGIR', conv => {
     */
     textToSpeech = `<speak>` +
       `Vote Goat was demonstrated at the SIGIR 2018 conference in Ann Arbor Michigan, U.S.A.` +
-      `The SIGIR-only stats tracking is now closed!` +
+      `SIGIR-only stats tracking is now closed! Return during SIGIR 2019 to curate next year's SIGIR "GOAT" movies.` +
+      `So, what next?` +
       `</speak>`;
 
     textToDisplay = ``;
