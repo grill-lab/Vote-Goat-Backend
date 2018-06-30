@@ -6,13 +6,13 @@ import numpy as np
 import pendulum
 import hug
 import json
+import uuid
 import operator
+import requests
 from operator import itemgetter
 
 client = MongoClient("MONGODB_SEVER_DETAILS"")
 db = client.votegoat
-
-###########
 
 def google_analytics(request, function_name):
 	"""
@@ -43,10 +43,17 @@ def google_analytics(request, function_name):
 				'ev': 0}
 
 	try:
+		# Attempting to POST the above payload to Google Analytics.
 		r = requests.post('https://www.google-analytics.com/collect', params=payload, headers=headers)
-	#	r = requests.post('www.google-analytics.com/collect', data=payload) # Either data or params
+		if (r.status_code == requests.codes.ok):
+			# Successful POST!
+			print("Successful G.A. POST!")
+		else:
+			# Unsuccessful POST!
+			print("Unsuccessful G.A. POST! {}".format(function_name))
 	except:
-		print("COULD NOT POST TO GOOGLE ANALYTICS!")
+		# Unsuccessful POST!
+		print("Unsuccessful G.A. POST! {}".format(function_name))
 
 ########### Helper functions
 
@@ -54,14 +61,8 @@ def generate_ml_id():
 	"""
 	Generate a new ID which will be compatible with the machine learning components.
 	"""
-	users = db.Users.find().sort([("userId", -1)])
-
-	user_count = users.count()
-	if(user_count == 0):
-		# Initially setting to 672l
-		return 1
-	else:
-		return users[0]["userId"] + 1
+	user_count = db.Users.find().count()
+	return user_count + 1
 
 def get_user_id_by_gg_id(gg_id):
 	"""
@@ -82,12 +83,13 @@ def get_latest_movie_id_by_gg_id(gg_id):
 
 def get_voted_movie_by_user_id(user_id):
 	"""
-	Retrieve the list of movies
+	Retrieve the list of movies the user has rated (imdbIDs)
 	"""
-	movie_list = list(db.user_ratings.find({ 'userId': user_id }, { "_id": 0, "userId": 0, "rating": 0 }))
+	movie_list = list(db.user_ratings.find({'userId': user_id}))
 	tmp_list = []
 	for movie in movie_list:
 		tmp_list.append(movie["imdbID"])
+
 	return tmp_list
 
 def check_api_token(api_key):
@@ -144,65 +146,79 @@ def submit_movie_rating(gg_id: hug.types.text, movie_id: hug.types.text, rating:
 		# API KEY VALID
 		user_id = get_user_id_by_gg_id(gg_id) # Convert gg_id to their incremental user_ratings userID.
 		if user_id is not None:
-			result = db.user_ratings.find({"$and": [{"userId": user_id}, {"imdbID": movie_id}]}).count()
-			#result = db.user_ratings.find({{"userId": user_id}, {"imdbID": movie_id}}).count() # Does this do the same as the above?
+			if (db.movie.find({"imdbID": movie_id}).count() > 0):
+				result = db.user_ratings.find({"$and": [{"userId": user_id}, {"imdbID": movie_id}]}).count()
 
-			if (mode == 'list_selection'):
-				# User is in the recommendation section & they just voted!
-				latest_usr_rec_ts = db.recommendation_history.find({"userId": user_id}).sort('k_mov_timestamp', -1)[0]['k_mov_timestamp'] # Getting the user's last recommendation session timestamp
-				db.recommendation_history.update_one({"userId": user_id, "k_mov_timestamp": latest_usr_rec_ts}, {"$set": {"voted": rating}}) # Recording the user's vote within the recommendation section
-
-			if (result == 0):	# User hasn't rated this movie yet.
-				movie_genres = db.movie.find({"imdbID": movie_id})['genre'] # Including the movie genres in the user ratings for ML movie recommendations
-				db.user_ratings.insert_one({"userId": user_id, "imdbID": movie_id, "rating": rating, "genres": movie_genres, "timestamp": timestamp, "conversation_id": conv_id, "raw_vote": raw_vote})
+				if (mode == 'list_selection'):
+					# User is in the recommendation section & they just voted!
+					latest_usr_rec_ts = list(db.recommendation_history.find({"userId": user_id}).sort('k_mov_timestamp', -1).limit(1))[0]['k_mov_timestamp'] # Getting the user's last recommendation session timestamp
+					print("Movie rating timestamp DEBUG: {}".format(latest_usr_rec_ts))
+					db.recommendation_history.update_one({"userId": user_id, "k_mov_timestamp": latest_usr_rec_ts}, {"$set": {"voted": rating}}) # Recording the user's vote within the recommendation section
 
 				currentTime = pendulum.now() # Getting the time (SIGIR)
 				current_time = int(round(currentTime.timestamp())) # Converting to timestamp (SIGIR)
 
-				user_genre_tally_data = db.user_genre_vote_tally.find({"userId": user_id})
+				if (result == 0):	# User hasn't rated thisl movie yet.
+					movie_genres = list(db.movie.find({"imdbID": movie_id}))[0]['genre'] # Including the movie genres in the user ratings for ML movie recommendations
+					db.user_ratings.insert_one({"userId": user_id, "imdbID": movie_id, "rating": rating, "genres": movie_genres, "timestamp": current_time, "conversation_id": conv_id, "raw_vote": raw_vote})
 
-				if (rating == 1):
-					db.Users.update_one({"userId": user_id, "gg_id": gg_id}, {"$inc": {"total_movie_votes": 1, "total_movie_upvotes": 1}}) # Updating the user's voting stats
+					user_genre_tally_data = db.user_genre_vote_tally.find({"userId": user_id})
 
-					if (current_time >= 1531033200) and (current_time < 1531479600) and (sigir == 1):
-						# SIGIR attendee
-						db.movie.update_one({"imdbID": movie_id}, {"$inc": {"goat_upvotes": 1, "sigir_upvotes": 1, "total_goat_votes": 1, "total_sigir_votes": 1}}) # Updating the movie's voting stats
+					if (rating == 1):
+						db.Users.update_one({"userId": user_id, "gg_id": gg_id}, {"$inc": {"total_movie_votes": 1, "total_movie_upvotes": 1}}) # Updating the user's voting stats
+
+						if (current_time >= 1531033200) and (current_time < 1531479600) and (sigir == 1):
+							# SIGIR attendee
+							db.movie.update_one({"imdbID": movie_id}, {"$inc": {"goat_upvotes": 1, "sigir_upvotes": 1, "total_goat_votes": 1, "total_sigir_votes": 1}}) # Updating the movie's voting stats
+						else:
+							# Normal user
+							db.movie.update_one({"imdbID": movie_id}, {"$inc": {"goat_upvotes": 1, "total_goat_votes": 1}}) # Updating the movie's voting stats
 					else:
-						# Normal user
-						db.movie.update_one({"imdbID": movie_id}, {"$inc": {"goat_upvotes": 1, "total_goat_votes": 1}}) # Updating the movie's voting stats
-				else:
-					db.Users.update_one({"userId": user_id, "gg_id": gg_id}, {"$inc": {"total_movie_votes": 1, "total_movie_downvotes": 1}}) # Updating the user's voting stats
+						db.Users.update_one({"userId": user_id, "gg_id": gg_id}, {"$inc": {"total_movie_votes": 1, "total_movie_downvotes": 1}}) # Updating the user's voting stats
 
-					if (current_time >= 1531033200) and (current_time < 1531479600) and (sigir == 1):
-						# SIGIR attendee
-						db.movie.update_one({"imdbID": movie_id}, {"$inc": {"goat_downvotes": 1, "sigir_downvotes": 1, "total_goat_votes": 1, "total_sigir_votes": 1}}) # Updating the movie's voting stats
-					else:
-						# Normal user
-						db.movie.update_one({"imdbID": movie_id}, {"$inc": {"goat_downvotes": 1, "total_goat_votes": 1}}) # Updating the movie's voting stats
+						if (current_time >= 1531033200) and (current_time < 1531479600) and (sigir == 1):
+							# SIGIR attendee
+							db.movie.update_one({"imdbID": movie_id}, {"$inc": {"goat_downvotes": 1, "sigir_downvotes": 1, "total_goat_votes": 1, "total_sigir_votes": 1}}) # Updating the movie's voting stats
+						else:
+							# Normal user
+							db.movie.update_one({"imdbID": movie_id}, {"$inc": {"goat_downvotes": 1, "total_goat_votes": 1}}) # Updating the movie's voting stats
 
-					inc_object = {}
+						inc_object = {}
 
-					for genre in movie_genres: # Tallying genre voting data
-							if rating == 1:
-									direction = 'up'
-							else:
-									direction = 'down'
+						for genre in movie_genres: # Tallying genre voting data
+								if rating == 1:
+										direction = 'up'
+								else:
+										direction = 'down'
 
-							target = str(genre)+'.'+direction
-							inc_object[target] = 1
+								target = str(genre)+'.'+direction
+								inc_object[target] = 1
 
-					db.user_genre_vote_tally.update_one({"userId": rating['userId']}, {"$inc": json.loads(json.dumps(inc_object))})
+						print(inc_object)
 
-				google_analytics(request, 'submit_movie_rating_success')
-				return {'success': True,
-						'valid_key': True,
-						'took': float(hug_timer)}
-			else: # Rating already exists!
-				# Overwrite rating entry using update_one & $set
-				db.user_ratings.update_one({"userId": user_id, "imdbID": movie_id}, {"$set": {"rating": rating}})
-				google_analytics(request, 'submit_movie_rating_overwritten')
+						db.user_genre_vote_tally.update_one({"userId": rating['userId']}, {"$inc": json.loads(json.dumps(inc_object))})
+
+					google_analytics(request, 'submit_movie_rating_success')
+					print("Input new rating")
+					return {'success': True,
+							'valid_key': True,
+							'took': float(hug_timer)}
+
+				else: # Rating already exists!
+					# Overwrite rating entry using update_one & $set
+					print("Updated existing rating!")
+					db.user_ratings.update_one({"userId": user_id, "imdbID": movie_id}, {"$set": {"rating": rating, "timestamp": current_time}})
+					google_analytics(request, 'submit_movie_rating_overwritten')
+					return {'success': False,
+							'error_message': 'Overwrote existing rating!',
+							'valid_key': True,
+							'took': float(hug_timer)}
+			else:
+				# There's no movie matching the imdbID
+				google_analytics(request, 'submit_movie_rating_imdbId_error')
+				error_message = "imdbID '" + str(movie_id) + "' does not exist!"
 				return {'success': False,
-						'error_message': 'Overwrote existing rating!',
+						'error_message': error_message,
 						'valid_key': True,
 						'took': float(hug_timer)}
 		else:
@@ -221,16 +237,16 @@ def submit_movie_rating(gg_id: hug.types.text, movie_id: hug.types.text, rating:
 
 @hug.get(examples='gg_id=anonymous_google_id&api_key=API_KEY')
 def get_user_ranking(gg_id: hug.types.text, api_key: hug.types.text, request, hug_timer=5):
-	"""
-	Retrieve the user's leaderboard rankings!
-	"""
+	"""Retrieve the user's leaderboard rankings!"""
 	if (check_api_token(api_key) == True):
 		# API KEY VALID
 		user_id = get_user_id_by_gg_id(gg_id) # Convert gg_id to their incremental user_ratings userID.
 		if user_id is not None:
-			user_result = db.Users.find_one({"userId": user_id, "gg_id": gg_id})
-			leaderboard = list(db.Users.find().sort('total_movie_votes', -1)) # Users sorted descending by their total_movie_votes
-			leaderboard_position = leaderboard.index(user_result) + 1 # Trying to get the user's leaderboard position
+			user_result = db.Users.find_one({"userId": user_id, "gg_id": gg_id}, {'_id': False})
+			leaderboard = list(db.Users.find({}, {'_id': False, 'total_movie_votes': True, 'userId': True}).sort('total_movie_votes', -1)) # Users sorted descending by their total_movie_votes
+
+			print(leaderboard[0])
+			leaderboard_position = leaderboard.index({'total_movie_votes': user_result['total_movie_votes'], 'userId': user_result['userId']}) + 1 # Trying to get the user's leaderboard position
 			quantity_users = db.Users.find().count()
 
 			google_analytics(request, 'get_user_ranking_success')
@@ -307,7 +323,11 @@ def get_user_ratings(gg_id: hug.types.text, api_key: hug.types.text, request, hu
 
 			if (len(combined_json_list) > 0): # Check the quantity of results
 				google_analytics(request, 'get_user_ratings_success')
-				return combined_json_list # More than one result retrieved
+				return {'user_ratings': combined_json_list,
+						'success': True,
+						'error_message': '',
+						'valid_key': True,
+						'took': float(hug_timer)}
 			else:
 				# User hasn't rated any movies
 				google_analytics(request, 'get_user_ratings_fail_no_ratings')
@@ -342,7 +362,7 @@ def build_training_response(mongodb_result, hug_timer, remaining_count):
 			'took': float(hug_timer)}
 
 @hug.get(examples='gg_id=anonymous_google_id&sort_target=imdbVotes&sort_direction=DESCENDING&genres=horror,drama&api_key=API_KEY')
-def get_single_training_movie(gg_id: hug.types.text, sort_target: hug.types.text, sort_direction: hug.types.text, genres: hug.types.text, api_key: hug.types.text, request, hug_timer=5):
+def get_single_training_movie(gg_id: hug.types.text, sort_target: hug.types.text, sort_direction: hug.types.text, genres: hug.types.text, api_key: hug.types.text, request, hug_timer=20):
 	"""
 	Get a single movie for the training bot section.
 	Retrieves a list of movies the user has previously voted for, used as a filter!
@@ -374,11 +394,13 @@ def get_single_training_movie(gg_id: hug.types.text, sort_target: hug.types.text
 			"""
 
 			if ((genres == ' ') | (genres == '%20')):
+				# User entered no genres
 				remaining_count = db.movie.find({'imdbID': {'$nin': imdb_list}}).count()
 			else:
+				# User has entered space seperated genres
 				genres.replace('%20', ' ') # Browser pushes ' ', NodeJS pushes '%20'
-				genres = genres.split(' ')
-				remaining_count = db.movie.find({'imdbID': {'$nin': imdb_list}, "genre": {'$all': genres}}).count()
+				genres = genres.split(' ') # Split string into list
+				remaining_count = db.movie.find({"$and": [{"imdbID": {"$nin": imdb_list}}, {"genre": {'$all': genres}}]}).count()
 
 			if (remaining_count > 0):
 				# Results found! Return 1 result to the user.
@@ -389,7 +411,7 @@ def get_single_training_movie(gg_id: hug.types.text, sort_target: hug.types.text
 					sorting = ASCENDING
 
 				if (len(genres) > 1):
-					result = (db.movie.find({'imdbID': {'$nin': imdb_list}, "genre": {'$all': genres}}, {'_id': False}).sort(sort_target, sorting).limit(1))[0]
+					result = (db.movie.find({"$and": [{"imdbID": {"$nin": imdb_list}}, {"genre": {'$all': genres}}]}, {'_id': False}).sort(sort_target, sorting).limit(1))[0]
 				else:
 					result = (db.movie.find({'imdbID': {'$nin': imdb_list}}, {'_id': False}).sort(sort_target, sorting).limit(1))[0]
 
@@ -429,22 +451,34 @@ def log_clicked_item(gg_id: hug.types.text, k_mov_ts: hug.types.number, clicked_
 	if (check_api_token(api_key) == True):
 		# API KEY VALID
 		user_id = get_user_id_by_gg_id(gg_id) # Get the user's movie rating user ID
+
 		if user_id is not None:
-			db.recommendation_history.update_one({"userId": user_id, "k_mov_timestamp": k_mov_ts}, {"$set": {"clicked_movie_IDs": clicked_movie}})
-			google_analytics(request, 'log_clicked_item_success')
-			return {'success': True,
-					'valid_key': True,
-					'took': float(hug_timer)}
+			if (db.recommendation_history.find({"$and": [{"userId": user_id}, {"k_mov_timestamp": k_mov_ts}]}).count() > 0):
+				# The recommendation history item exists!
+				db.recommendation_history.update_one({"userId": user_id, "k_mov_timestamp": k_mov_ts}, {"$set": {"clicked_movie_IDs": clicked_movie}})
+				google_analytics(request, 'log_clicked_item_success')
+				return {'success': True,
+						'valid_key': True,
+						'took': float(hug_timer)}
+			else:
+				# The recommendation history item did not exist!
+				google_analytics(request, 'log_clicked_item_non_existent')
+				return {'success': False,
+						'error_message': 'No recommendation history item exists.',
+						'valid_key': True,
+						'took': float(hug_timer)}
 		else:
 			# Invalid GG_ID
 			google_analytics(request, 'log_clicked_item_id_error')
-			return {'success': True,
+			return {'success': False,
+					'error_message': 'Invalid UserId',
 					'valid_key': True,
 					'took': float(hug_timer)}
 	else:
 		# API KEY INVALID!
 		google_analytics(request, 'log_clicked_item_apikey_error')
 		return {'success': False,
+				'error_message': 'Invalid API KEY!',
 				'valid_key': False,
 				'took': float(hug_timer)}
 
@@ -547,15 +581,24 @@ def build_movie_json(mongodb_result, hug_timer):
 	movie_vote_quantities = []
 
 	for result in mongodb_result:
+		#print(result)
 		total_votes = int(result['goat_upvotes'] + result['goat_downvotes'])
 		movie_vote_quantities.append(total_votes)
 
 	median_vote_quantity = np.median(movie_vote_quantities)
 
 	for result in mongodb_result:
-		goat_score = int((result['goat_upvotes'] / (result['goat_upvotes'] + result['goat_downvotes']))*100)
 		total_result_votes = int(result['goat_upvotes'] + result['goat_downvotes'])
-		adjusted_goat_score = int(goat_score * (total_result_votes/median_vote_quantity)) # TODO: Figure out a better adjusted goat score!
+		goat_score = int((result['goat_upvotes'] / total_result_votes)*100) # % of votes that are upvotes
+
+		if (total_result_votes/median_vote_quantity) > 1:
+			# If they have more than the median then don't punish the score.
+			adjustment = 1
+		else:
+			# If they have less than the median, punish the score.
+			adjustment = total_result_votes/median_vote_quantity
+
+		adjusted_goat_score = int(goat_score * adjustment)
 
 		combined_json_list.append({'imdbID': result['imdbID'],
 									 'year': result['year'],
@@ -570,19 +613,25 @@ def build_movie_json(mongodb_result, hug_timer):
 
 @hug.get(examples='genres=horror drama&vote_target=goat_upvotes&api_key=API_KEY')
 def get_goat_movies(genres: hug.types.text, vote_target: hug.types.text, api_key: hug.types.text, request, hug_timer=5):
-	"""
-	Get a list of the most upvoted (GOAT) movies.
-	Input: gg_id, genres, api_key
-	URL: https://HOST:PORT/get_goat_movies?genres=%20&api_key=API_KEY
-	"""
+	"""Get a list of the most upvoted (GOAT) movies."""
 	if (check_api_token(api_key) == True):
 		# API KEY VALID
-
-		allowed_vote_targets = ['goat_upvotes', 'goat_downvotes', 'total_goat_votes', 'sigir_upvotes', 'sigir_downvotes', 'total_sigir_votes', 'imdbVotes'] # Allowed GOAT vote targets
+		# TODO: Enable multiple vote targets, to sort by multiple indexes.
+		allowed_vote_targets = ["goat_upvotes", "goat_downvotes", "total_goat_votes", "sigir_upvotes", "sigir_downvotes", "total_sigir_votes", "imdbVotes"] # Allowed GOAT vote targets
 		if vote_target in allowed_vote_targets:
 			# Allowed vote target
 			if ((genres == ' ') | (genres == '%20')):
-				result = list(db.movie.find({}, {str(vote_target): -1}).limit(10))
+				movie_count = db.movie.find({vote_target: {"$gt": 1}}).count()
+
+				if (movie_count > 0):
+					result = list(db.movie.find({vote_target: {"$gt": 1}}).sort(vote_target, pymongo.DESCENDING).limit(10))
+				else:
+					# No results, provide json result for nodejs to detect!
+					google_analytics(request, 'get_goat_movies_no_movies_found')
+					return {'success': False,
+							'error_message': 'No movie results',
+							'valid_key': True,
+							'took': float(hug_timer)}
 			else:
 				# The uer has input movie genres
 				genres.replace('%20', ' ') # Browser pushes ' ', NodeJS pushes '%20'
@@ -594,13 +643,12 @@ def get_goat_movies(genres: hug.types.text, vote_target: hug.types.text, api_key
 
 				if (genre_list_check == True):
 					# Multiple genres detected! Count the quantity of movies w/ all of these genres!
-					movie_count = db.movie.find({"genre": {'$all': genres}}, {str(vote_target): -1}).count()
+					movie_count = db.movie.find({"$and": [{vote_target: {"$gt": 1}}, {"genre": {'$all': genres}}]}).count()
 				else:
 					# Single genre detected! Count how many movies there are w/ this genre
-					movie_count = db.movie.find({"genre": genres}, {str(vote_target): -1}).count()
+					movie_count = db.movie.find({"$and": [{vote_target: {"$gt": 1}}, {"genre": {'$all': genres}}]}).count()
 
 				if (movie_count > 0):
-					print("greater than 0")
 					# Results found!
 					if (movie_count >= 10):
 						# More than 10 movies found? Let's limit top-k to 10!
@@ -611,10 +659,10 @@ def get_goat_movies(genres: hug.types.text, vote_target: hug.types.text, api_key
 
 					if (genre_list_check == True):
 						# Multiple genre 'all' search
-						result = list(db.movie.find({"genre": {'$all': genres}}, {str(vote_target): -1}).limit(k_limit))
+						result = list(db.movie.find({"$and": [{vote_target: {"$gt": 1}}, {"genre": {'$all': genres}}]}).sort(vote_target, pymongo.DESCENDING).limit(k_limit))
 					else:
 						# Single genre search
-						result = list(db.movie.find({"genre": genres}, {str(vote_target): -1}).limit(k_limit))
+						result = list(db.movie.find({"$and": [{vote_target: {"$gt": 1}}, {"genre": genres}]}).sort(vote_target, pymongo.DESCENDING).limit(k_limit))
 				else:
 					# No results, provide json result for nodejs to detect!
 					google_analytics(request, 'get_goat_movies_no_movies_found')
