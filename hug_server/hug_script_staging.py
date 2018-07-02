@@ -6,6 +6,7 @@ import numpy as np
 import pendulum
 import hug
 import json
+import ujson
 import uuid
 import operator
 import requests
@@ -14,12 +15,14 @@ from operator import itemgetter
 client = MongoClient("MONGODB_SEVER_DETAILS"")
 db = client.votegoat
 
+###########
+
 def google_analytics(request, function_name):
 	"""
 	# Tracking usage via Google Analytics (using the measurement protocol).
 	# Why? Because the only insight into the use of HUG currently is the access & error logs (insufficient).
 	"""
-	google_analytics_code = 'GOOGLE_ANALYTICS_CODE'
+	google_analytics_code = 'CHATBASE_API_KEY'
 	user_agent = str(request.user_agent)
 	user_source = str(request.referer)
 	user_request = str(request.uri)
@@ -192,11 +195,11 @@ def submit_movie_rating(gg_id: hug.types.text, movie_id: hug.types.text, rating:
 										direction = 'down'
 
 								target = str(genre)+'.'+direction
-								inc_object[target] = 1
+								inc_object[target] = int(1)
 
 						print(inc_object)
 
-						db.user_genre_vote_tally.update_one({"userId": rating['userId']}, {"$inc": json.loads(json.dumps(inc_object))})
+						db.user_genre_vote_tally.update_one({"userId": user_id}, {"$inc": inc_object})
 
 					google_analytics(request, 'submit_movie_rating_success')
 					print("Input new rating")
@@ -410,7 +413,7 @@ def get_single_training_movie(gg_id: hug.types.text, sort_target: hug.types.text
 				else:
 					sorting = ASCENDING
 
-				if (len(genres) > 1):
+				if (len(genres) > 0):
 					result = (db.movie.find({"$and": [{"imdbID": {"$nin": imdb_list}}, {"genre": {'$all': genres}}]}, {'_id': False}).sort(sort_target, sorting).limit(1))[0]
 				else:
 					result = (db.movie.find({'imdbID': {'$nin': imdb_list}}, {'_id': False}).sort(sort_target, sorting).limit(1))[0]
@@ -482,21 +485,31 @@ def log_clicked_item(gg_id: hug.types.text, k_mov_ts: hug.types.number, clicked_
 				'valid_key': False,
 				'took': float(hug_timer)}
 
-@hug.get(examples='gg_id=anonymous_google_id&api_key=API_KEY')
-def get_random_movie_list(gg_id: hug.types.text, api_key: hug.types.text, request, hug_timer=5):
-	"""
-	Input: gg_id, api_key
-	Output: Ten random movies.
-	URL: https://HOST:PORT/get_random_movie_list?gg_id=anonymous_google_id&api_key=API_KEY
-	"""
+@hug.get(examples='gg_id=anonymous_google_id&genres=Action,Horror&sort_target=imdbVotes&sort_direction=DESCENDING&api_key=API_KEY')
+def get_random_movie_list(gg_id: hug.types.text, genres: hug.types.multiple, sort_target: hug.types.text, sort_direction: hug.types.text, api_key: hug.types.text, request, hug_timer=5):
+	"""Produces a list of random movies (with more than 1 imdbVotes)."""
 	if (check_api_token(api_key) == True):
 		# API KEY VALID
 		user_id = get_user_id_by_gg_id(gg_id) # Get the user's movie rating user ID (incremental)
 		if user_id is not None:
-			result_count = db.movie.find().count() # Finding all movies which match this genre
-			results = list(db.movie.find().limit(10).skip(randrange(0, result_count))) # .sort([('imdbVotes', -1), ('imdbRating', -1)])
 
-			results = sorted(results, key=operator.itemgetter('imdbVotes', 'imdbRating'), reverse=True) # Sort the list of dicts.
+			if (sort_direction == "DESCENDING"):
+				sorting = DESCENDING
+			else:
+				sorting = ASCENDING
+
+			if (genres == ' '):
+				result_count = db.movie.find({sort_target: {"$gt": 1}}, {'_id': False}).count()
+				random_results = db.movie.find({sort_target: {"$gt": 1}}, {'_id': False}).sort(sort_target, sorting).limit(10).skip(randrange(0, result_count))
+			else:
+				result_count = db.movie.find({"$and": [{sort_target: {"$gt": 1}}, {"genre": {'$all': genres}}]}, {'_id': False}).count()
+
+				if result_count > 5000: # If there are more than 10k movies matching the result, let's cap it at 10k
+					result_count = 5000
+
+				random_results = db.movie.find({"$and": [{sort_target: {"$gt": 1}}, {"genre": {'$all': genres}}]}, {'_id': False}).sort(sort_target, sorting).limit(10).skip(randrange(0, result_count))
+
+			random_results = sorted(random_results, key=operator.itemgetter('imdbVotes', 'imdbRating'), reverse=True) # Sort the list of dicts.
 
 			combined_json_list = []
 			imdbID_list = []
@@ -504,7 +517,7 @@ def get_random_movie_list(gg_id: hug.types.text, api_key: hug.types.text, reques
 			currentTime = pendulum.now() # Getting the time
 			timestamp = int(round(currentTime.timestamp())) # Converting to timestamp
 
-			for result in results:
+			for result in random_results:
 				imdbID_list.append(result['imdbID']) # Logging the imdbID for storing in mongodb
 				combined_json_list.append({'imdbID': result['imdbID'],
 											 'k_mov_ts': timestamp,
@@ -570,6 +583,8 @@ def get_ab_value(gg_id: hug.types.text, api_key: hug.types.text, request, hug_ti
 		google_analytics(request, 'get_ab_value_apikey_error')
 		return {'success': False, 'valid_key': False, 'took': float(hug_timer)}
 
+
+
 #########################
 
 def build_movie_json(mongodb_result, hug_timer):
@@ -585,18 +600,23 @@ def build_movie_json(mongodb_result, hug_timer):
 		total_votes = int(result['goat_upvotes'] + result['goat_downvotes'])
 		movie_vote_quantities.append(total_votes)
 
-	median_vote_quantity = np.median(movie_vote_quantities)
+	#median_vote_quantity = np.median(movie_vote_quantities)
+	mean_vote_quantity = np.mean(movie_vote_quantities)
+	std_deviation = np.std(movie_vote_quantities)
 
 	for result in mongodb_result:
 		total_result_votes = int(result['goat_upvotes'] + result['goat_downvotes'])
 		goat_score = int((result['goat_upvotes'] / total_result_votes)*100) # % of votes that are upvotes
 
-		if (total_result_votes/median_vote_quantity) > 1:
-			# If they have more than the median then don't punish the score.
+		#absolute_diff = abs(total_result_votes - median_vote_quantity) # Median vs Mean for identifying outliers?
+		absolute_diff = abs(total_result_votes - mean_vote_quantity) # Median vs Mean for identifying outliers?
+
+		if (absolute_diff <= 2*std_deviation):
+			# If within 2 std deviations, don't punish goat_score!
 			adjustment = 1
 		else:
-			# If they have less than the median, punish the score.
-			adjustment = total_result_votes/median_vote_quantity
+			# If they have greater than 2*std_deviation then we punish their score
+			adjustment = 1 - (((absolute_diff/std_deviation) - 2) * 0.1) # 10% per 1 std dev past 2nd
 
 		adjusted_goat_score = int(goat_score * adjustment)
 
@@ -607,6 +627,7 @@ def build_movie_json(mongodb_result, hug_timer):
 									 'runtime': result['runtime'],
 									 'upvotes': result['goat_upvotes'],
 									 'downvotes': result['goat_downvotes'],
+									 'adustment': adjustment,
 									 'goat_score': adjusted_goat_score})
 
 	return combined_json_list
@@ -646,7 +667,7 @@ def get_goat_movies(genres: hug.types.text, vote_target: hug.types.text, api_key
 					movie_count = db.movie.find({"$and": [{vote_target: {"$gt": 1}}, {"genre": {'$all': genres}}]}).count()
 				else:
 					# Single genre detected! Count how many movies there are w/ this genre
-					movie_count = db.movie.find({"$and": [{vote_target: {"$gt": 1}}, {"genre": {'$all': genres}}]}).count()
+					movie_count = db.movie.find({"$and": [{vote_target: {"$gt": 1}}, {"genre": genres}]}).count()
 
 				if (movie_count > 0):
 					# Results found!
@@ -693,3 +714,58 @@ def get_goat_movies(genres: hug.types.text, vote_target: hug.types.text, api_key
 		return {'success': False,
 				'valid_key': False,
 				'took': float(hug_timer)}
+
+################### ALPHA:
+
+@hug.get(examples='intent=Recommendation&api_key=API_KEY')
+def get_experiment_values(intent: hug.types.text, api_key: hug.types.text, request, hug_timer=5):
+	"""Enable triggering different HUG functions for the Vote Goat movie recommendation intent."""
+	if (check_api_token(api_key) == True):
+		# API KEY VALID
+		if (db.experiment_tracker.find({'intent': intent}).count() > 0):
+			google_analytics(request, 'get_experiment_value_success')
+
+			latest_experiment = list(db.experiment_tracker.find({'intent': intent}).sort('experiment_id', DESCENDING))[0]
+
+			return {'experiment_details': {'intent': latest_experiment['intent'], 'experiment_id': latest_experiment['experiment_id'], 'target_hug_function':latest_experiment['target_hug_function'], 'target_hug_parameters':latest_experiment['target_hug_parameters'], 'probabilities':latest_experiment['probabilities']}, 'success': True, 'valid_key': True, 'took': float(hug_timer)}
+		else:
+			google_analytics(request, 'get_experiment_value_fail')
+			return {'success': False, 'error_message': 'Failed to retrieve an experiment!', 'valid_key': True, 'took': float(hug_timer)}
+	else:
+		# API KEY INVALID!
+		google_analytics(request, 'get_experiment_value_apikey_error')
+		return {'success': False, 'valid_key': False, 'took': float(hug_timer)}
+
+@hug.get(examples='intent=Recommendation&function_0=get_random_movie_list&function_1=get_random_movie_list&parameters_0=key1:val1,key2:val2&parameters_1=key1:val1,key2:val2&probability_0=80&probability_1=20&api_key=API_KEY')
+def create_experiment_values(intent: hug.types.text, api_key: hug.types.text, function_0: hug.types.text, function_1: hug.types.text, parameters_0: hug.types.multiple, parameters_1: hug.types.multiple, probability_0: hug.types.number, probability_1: hug.types.number, request, hug_timer=5):
+	"""Create experiments on the fly! You can specify 2 different HUG functions & different parameters for both. Assign an integer value for each, reating a custom ratio of A:B occurrence."""
+	if (check_api_token(api_key) == True):
+		# API KEY VALID
+		quantity_existing_experiments = db.experiment_tracker.find().count()
+		experiment_id = quantity_existing_experiments + 1
+
+		if parameters_0 != [' ']:
+			parameter_holder = {}
+			for parameter in parameters_0:
+				keyval = parameter.split(":")
+				parameter_holder[keyval[0]] = keyval[1]
+			parameters_0 = parameter_holder
+		else:
+			parameters_0 = {}
+
+		if parameters_1 != [' ']:
+			parameter_holder = {}
+			for parameter in parameters_1:
+				keyval = parameter.split(":")
+				parameter_holder[keyval[0]] = keyval[1]
+			parameters_1 = parameter_holder
+		else:
+			parameters_1 = {}
+
+		google_analytics(request, 'create_experiment_values_success')
+		db.experiment_tracker.insert_one({'intent': intent, 'experiment_id': experiment_id, 'target_hug_function': {str(0):function_0, str(1):function_1},'target_hug_parameters': {str(0): parameters_0, str(1): parameters_1}, 'probabilities': {str(0): probability_0, str(1): probability_1}})
+		return {'success': True, 'valid_key': True, 'took': float(hug_timer)}
+	else:
+		# API KEY INVALID!
+		google_analytics(request, 'create_experiment_value_apikey_error')
+		return {'success': False, 'error_message': 'Invalid API Key', 'valid_key': False, 'took': float(hug_timer)}

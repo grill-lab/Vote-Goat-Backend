@@ -84,33 +84,27 @@ def movie_recommendation(genres: hug.types.text, gg_id: hug.types.text, api_key:
             rating_training = db.user_ratings.find({'userId': user_id},{'_id':0}) # Retrieving the user's movie ratings
             rating_training = list(rating_training)
 
-			genres.replace('%20', ' ') # Browser pushes ' ', NodeJS pushes '%20'
-			if (' ' in genres):
-				genres = genres.split(' ') # Splitting the genre string into a list of genres!
-
             if len(rating_training) >= 5):  # Minimum of 5 votes for Google cloud model to work!
                 # The user id.
                 QUERY_USER_ID = user_id #'query_user_id'
 
                 # Implemented Vote Goat genre names
                 # TODO: Allocate IDs to the following genres
-                Genres = ['Action','Adventure','Animation','Biography','Comedy','Crime','Documentary','Drama','Family','Fantasy','Film-Noir','Horror', 'Music', 'Musical','Mystery', 'News', 'Romance','Sci-Fi','Short','Sport','Thriller','War','Western']
+                Genres = ['Action','Adventure','Animation','Biography','Comedy','Crime','Documentary','Drama','Family','Fantasy','Film-Noir','Horror','Music','Musical','Mystery','News','Romance','Sci-Fi','Short','Sport','Thriller','War','Western']
 
-                """
-                # NOTE: Movielens movie rating dataset uses different id from IMDB.
-                # @Jeff - Should we either:
-                # * Pre-process the movielens dataset & change the google cloud movie recommendation repo code to use IMDB Ids instead of movielens Ids?
-                # * Just conver the IMDB Ids here to Movielens Ids using the following code:
-                """
-                QUERY_RATED_MOVIE_IDS = [] # ['id', 'id', ...]
+                QUERY_RATED_MOVIE_IDS = [] # ['id', 'id', ...] NOTE: Movielens movie rating dataset uses different id from IMDB.
 
                 # The scores on the rated movies given by the user.
                 QUERY_RATED_MOVIE_SCORES = [] # [1, 0, ...]
 
                 # The set of genres of the rated movies.
                 # TODO: QUERY_RATED_GENRE_IDS - existing IDs for genres in ML? Or can we sort by alphabetical order then just get the index in list as genre Id?
-
                 QUERY_RATED_GENRE_IDS = range(len(Genres)) # Is this just supposed to be the Genre IDs?
+
+
+    			genres.replace('%20', ' ') # Browser pushes ' ', NodeJS pushes '%20'
+    			if (' ' in genres):
+    				genres = genres.split(' ') # Splitting the genre string into a list of genres!
 
                 for rating_entry in rating_training:
                     """
@@ -143,48 +137,15 @@ def movie_recommendation(genres: hug.types.text, gg_id: hug.types.text, api_key:
 
                 # NOTE: Perhaps best to perform top-k reduction before the next step?
                 recomended_movie_ids = list(map(reverse_dict.get, recomended_movie_ids)) # Converting the top-k list movie IDs from movielens/tmdb back to imdbID
-            else: # Below minimum
-                # The user has not yet voted 5 times
-			    genre_list_check = isinstance(genres, list) # Check if the genres variable is a list (or a single genre string)
+            else:
+                # Below minimum vote requirement
 
-    			# Multiple genres detected! Count the quantity of movies w/ all of these genres!
-                if (genre_list_check):
-                    # Multiple movie genres!
-                    movie_count = db.movie.find({"genre": {'$all': genres}}).count()
-    			else if (!genre_list_check):
-    				# Single genre detected! Count how many movies there are w/ this genre
-    			    movie_count = db.movie.find({"genre": genres}).count()
-                else if ((genres == ' ') | (genres == '%20')):
-                    movie_count = db.movie.find().count()
+                # TODO: Alternatively to returning failure - should we provide movies?
 
-    			if (movie_count > 2): # Minimum of 2 items in the carousel response!
-    				# More than 2 results were found!
-                    if (movie_count < 9):
-                        k_limit = movie_count
-                    else:
-                        k_limit = 9
-
-    				if (genre_list_check):
-    					# Multiple genre 'all' search
-    					results = db.movie.find({"genre": {'$all': genres}})[:k_limit]
-    				else if (!genre_list_check):
-    					# Single genre search
-    					results = db.movie.find({"genre": genres})[:k_limit]
-                    else if ((genres == ' ') | (genres == '%20')):
-                        # No genres input
-                    	results = list(db.movie.find().limit(10).skip(randrange(0, result_count))) # .sort([('imdbVotes', -1), ('imdbRating', -1)])
-
-                    results = sorted(results, key=operator.itemgetter('imdbVotes', 'imdbRating'), reverse=True) # Sort the list of dicts.
-
-                	recomended_movie_ids = []
-
-                	for result in results:
-                		recomended_movie_ids.append({'imdbID': result['imdbID'])
-    			else:
-    				# No results, provide json result for nodejs to detect!
-    				return {'success': False,
-    						'valid_key': True,
-    						'took': float(hug_timer)}
+                return {'success': False,
+                        'error_message': 'less than 5 votes',
+                        'valid_key': True,
+                        'took': float(hug_timer)}
 
             # Now to produce JSON consumable by Firebase
             combined_json_list = [] # Empty list where we'll store the top-k movie json items
