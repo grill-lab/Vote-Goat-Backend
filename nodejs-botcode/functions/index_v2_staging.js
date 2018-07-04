@@ -14,7 +14,11 @@ let chatbase = require('@google/chatbase')
 const hug_host = 'https://staging.domain.tld';
 
 const app = dialogflow({
-  debug: true
+  debug: true,
+  verification: {
+    // Get the header key and value from dialogflow fullfilment page!
+    'HEADER_KEY': 'HEADER_VALUE',
+  }
 }); // Creating the primary dialogflow app element
 
 ////////////// Helper functions
@@ -1309,9 +1313,9 @@ app.intent('moreMovieInfo', (conv) => {
       var suggestions;
 
       if (requested_mode === 'list_selection') {
-        suggestions = [`👍`, `👎`, '🗳 Rank Movies', `🐐 GOAT Movies`, '🏆 Show Stats', '📑 Help'];
+        suggestions = [`👍`, `👎`,  `🍿 Watch movie online`, '🗳 Rank Movies', `🐐 GOAT Movies`, '💾 SIGIR demo', '🏆 Show Stats', '📑 Help'];
       } else {
-        suggestions = [`👍`, `👎`, `🤔 recommend me a movie`, `🐐 GOAT Movies`, '🏆 Show Stats', '📑 Help'];
+        suggestions = [`👍`, `👎`,  `🍿 Watch movie online`, `🤔 recommend me a movie`, `🐐 GOAT Movies`, '💾 SIGIR demo', '🏆 Show Stats', '📑 Help'];
       }
 
       store_fallback_response(conv, fallback_messages, suggestions);
@@ -1551,7 +1555,7 @@ app.intent('goat', (conv, { movieGenre }) => {
                     speech: '<speak>What do you want to do next?</speak>',
                     text: 'What do you want to do next?'
                   }),
-                  new Suggestions('🗳 Rank Movies', '🤔 Movie Recommendation', '🏆 Show Stats', '📑 Help', `🚪 Quit`)
+                  new Suggestions('💾 SIGIR demo',  '🎥 SIGIR Movies', '🗳 Rank Movies', '🤔 Movie Recommendation', '🏆 Show Stats', '📑 Help', `🚪 Quit`)
                 );
                 store_repeat_response(conv, 'getGoat', textToSpeech, textToDisplay); // Storing repeat info
               });
@@ -2242,11 +2246,11 @@ app.intent('getHelpAnywhere', conv => {
     `</speak>`;
 
   const textToDisplay = `I heard you need help using Vote Goat?\n` +
-    `In Vote Goat you can rank movies, get movie recommendations and get lists of most upvoted movies.\n` +
-    `You can filter movie results by including movie genres in our conversation.\n` +
-    `When shown a movie, you can ask for "🎬 more movie info" or enquire where to "🍿 watch the movie online".\n` +
-    `Vote Goat includes a leaderboard system and progression tracker, so keep ranking movies!\n` +
-    `It's not yet possible to search for movies directly nor yet possible to filter movies other than by genre. This will change in the future.\n`;
+    `◽ In Vote Goat you can rank movies, get movie recommendations and get lists of most upvoted movies.\n` +
+    `◽ You can filter movie results by including movie genres in our conversation.\n` +
+    `◽ When shown a movie, you can ask for "🎬 more movie info" or enquire where to "🍿 watch the movie online".\n` +
+    `◽ Vote Goat includes a leaderboard system and progression tracker, so keep ranking movies!\n` +
+    `🔽 It's not yet possible to search for movies directly nor yet possible to filter movies other than by genre. This will likely change in the near future.\n`;
 
   let textToSpeech2;
   let textToDisplay2;
