@@ -101,11 +101,6 @@ def movie_recommendation(genres: hug.types.text, gg_id: hug.types.text, api_key:
                 # TODO: QUERY_RATED_GENRE_IDS - existing IDs for genres in ML? Or can we sort by alphabetical order then just get the index in list as genre Id?
                 QUERY_RATED_GENRE_IDS = range(len(Genres)) # Is this just supposed to be the Genre IDs?
 
-
-    			genres.replace('%20', ' ') # Browser pushes ' ', NodeJS pushes '%20'
-    			if (' ' in genres):
-    				genres = genres.split(' ') # Splitting the genre string into a list of genres!
-
                 for rating_entry in rating_training:
                     """
                     Extracting information from retrieved ratings
@@ -132,6 +127,10 @@ def movie_recommendation(genres: hug.types.text, gg_id: hug.types.text, api_key:
                     QUERY_RATED_GENRE_FREQS.append(total_votes)
                     QUERY_RATED_GENRE_AVG_SCORES.append(upvotes/total_votes)
 
+                # Taking
+    			spaced_genres = genres.replace('%20', ' ') # Browser pushes ' ', NodeJS pushes '%20'
+    			genre_list = genres.split(' ') # Splitting the genre string into a list of genres!
+
                 # Producing a list of movie recommendations
                 recomended_movie_ids = ml_movie_recomendation(QUERY_USER_ID, QUERY_RATED_MOVIE_IDS, QUERY_RATED_MOVIE_SCORES, QUERY_RATED_GENRE_IDS, QUERY_RATED_GENRE_FREQS, QUERY_RATED_GENRE_AVG_SCORES)
 
@@ -139,9 +138,6 @@ def movie_recommendation(genres: hug.types.text, gg_id: hug.types.text, api_key:
                 recomended_movie_ids = list(map(reverse_dict.get, recomended_movie_ids)) # Converting the top-k list movie IDs from movielens/tmdb back to imdbID
             else:
                 # Below minimum vote requirement
-
-                # TODO: Alternatively to returning failure - should we provide movies?
-
                 return {'success': False,
                         'error_message': 'less than 5 votes',
                         'valid_key': True,
