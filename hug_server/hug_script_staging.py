@@ -410,57 +410,45 @@ def get_single_training_movie(gg_id: hug.types.text, sort_target: hug.types.text
 		user_id = get_user_id_by_gg_id(gg_id) # Get the user's movie rating user ID (incremental)
 		if user_id is not None:
 			imdb_list = get_voted_movie_by_user_id(user_id) # Produce a list of the user's previously rated movies.
-
 			"""
-			TODO: Change how we sort the list of movie results!
-			* We currently just sort by the most IMDB votes, so in a way our 'Training' movie selection order is verifying IMDB movie ranking data.
-				* Curation/Work-Validation vs Presentation Bias
-
 			TODO: Maximize information gain
 			* How can we maximize information gain from an individual movie?
 			* Present the most controversial movies? Users might not appreciate being shown horrible/violent movies.
+			* Curation/Work-Validation vs Presentation Bias
 			"""
 			if (sort_direction == "DESCENDING"):
 				sorting = DESCENDING
 			else:
 				sorting = ASCENDING
 
-			#if ((genres == []) | (genres == ["%2C"]) | (genres == [","]) | (genres == [" "]) | (genres == " ") | (genres == ["%20"])):
-			if ((genres == []) | (genres == ["NONE"])):
+			find_and_list = []
+			find_and_list.append({"imdbID": {"$nin": imdb_list}}) # We don't want to show the user movies they've already voted on
+			find_and_list.append({sort_target: {'$gt': target_min_value}}) # We want to sort by this
 
-				# User entered no genres
-				inc_object = {str(sort_target): {'$gt': int(target_min_value)}}
-				inc_object = ujson.loads(ujson.dumps(inc_object))
-				remaining_count = db.movie.find({"$and": [{"imdbID": {"$nin": imdb_list}}, inc_object]}).count()
-				if (remaining_count > 0):
-					print("Successful movie without genre")
-					result = db.movie.find({"$and": [{"imdbID": {"$nin": imdb_list}}, inc_object]}, {'_id': False}).sort(sort_target, sorting).limit(1)
-					#return {'test': 0, 'inc_object': inc_object, 'remaining_count': remaining_count} #, 'result': result
-				else:
-					# No results found!
-					print("UnSuccessful movie without genre")
-					return no_movies(request, hug_timer)
-			else:
+			if (sort_target == 'imdbRating'):
+				# Since there are many 10's with few votes, apply a scaled imdbVotes minimum
+				min_votes = int(target_min_value) * 10 # 1=10, 5=50, 10=100
+				find_and_list.append({'imdbVotes': {'$gt': min_votes}})
+
+			if ((genres != []) and (genres != ["NONE"])):
+				# The user has provided genre parameter data
 				genres = process_genres(genres)
-				# User has entered genres
 				if (len(genres) > 1):
-					# More than 1 genre
-					remaining_count = db.movie.find({"$and": [{"imdbID": {"$nin": imdb_list}}, {sort_target: {'$gt': target_min_value}}, {"genre": {'$all': genres}}]}).count()
-					if (remaining_count > 0):
-						# Results found! Return 1 result to the user.
-						result = db.movie.find({"$and": [{"imdbID": {"$nin": imdb_list}}, {"genre": {'$all': genres}}]}, {'_id': False}).sort(sort_target, sorting).limit(1)
-					else:
-						# No results found!
-						return no_movies(request, hug_timer)
+					# Multiple genres!
+					find_and_list.append({"genre": {'$all': genres}})
 				else:
-					# Only 1 genre
-					remaining_count = db.movie.find({"$and": [{"imdbID": {"$nin": imdb_list}}, {sort_target: {'$gt': target_min_value}}, {"genre": genres}]}).count()
-					if (remaining_count > 0):
-						# Results found! Return 1 result to the user.
-						result = db.movie.find({"$and": [{"imdbID": {"$nin": imdb_list}}, {sort_target: {'$gt': target_min_value}}, {"genre": genres}]}, {'_id': False}).sort(sort_target, sorting).limit(1)
-					else:
-						# No results found!
-						return no_movies(request, hug_timer)
+					# Only the 1 genre
+					find_and_list.append({"genre": genres})
+
+			remaining_count = db.movie.find({"$and": find_and_list}).count()
+			if (remaining_count > 0):
+				# Found enough movies
+				#result = db.movie.find({"$and": [{"imdbID": {"$nin": imdb_list}}, inc_object]}, {'_id': False}).sort(sort_target, sorting).limit(1)
+				result = db.movie.find({"$and": find_and_list}, {'_id': False}).sort(sort_target, sorting).limit(1)
+			else:
+				# No results found!
+				print("UnSuccessful movie without genre")
+				return no_movies(request, hug_timer)
 
 			# Let's log then build the movie response!
 			google_analytics(request, 'get_single_training_movie_success')
@@ -535,48 +523,48 @@ def get_random_movie_list(gg_id: hug.types.text, experiment_id: hug.types.number
 			else:
 				sorting = ASCENDING
 
-			#if ((genres == []) | (genres == ["%2C"]) | (genres == [","]) | (genres == [" "]) | (genres == " ") | (genres == ["%20"])):
-			if ((genres == []) | (genres == ["NONE"])):
-				#print("A")
-				#{"$and": [{"imdbID": {"$nin": imdb_list}}, {sort_target: {'$gt': target_min_value}}]}
-				movie_count = db.movie.find({sort_target: {"$gt": target_min_value}}, {'_id': False}).count()
-				if (movie_count >= 10):
-					result_count = 10
-				else:
-					result_count = movie_count
+			find_and_list = []
+			find_and_list.append({sort_target: {'$gt': target_min_value}}) # We want to sort by this
 
-				random_results = []
-				for movie in range(result_count):
-					if movie_count > 100:
-						random_results.append(list(db.movie.find({sort_target: {"$gt": target_min_value}}, {'_id': False}).sort(sort_target, sorting).limit(1).skip(randint(0, int(movie_count/5))))[0])
-					else:
-						random_results.append(list(db.movie.find({sort_target: {"$gt": target_min_value}}, {'_id': False}).sort(sort_target, sorting).limit(1).skip(randint(0, movie_count)))[0])
-			else:
-				#print("B")
+			if (sort_target == 'imdbRating'):
+				# Since there are many 10's with few votes, apply a scaled imdbVotes minimum
+				min_votes = int(target_min_value) * 10 # 1=10, 5=50, 10=100
+				find_and_list.append({'imdbVotes': {'$gt': min_votes}})
+
+			if ((genres != []) and (genres != ["NONE"])):
+				# The user has provided genre parameter data
 				genres = process_genres(genres)
-
-				movie_count = db.movie.find({"$and": [{sort_target: {"$gt": target_min_value}}, {"genre": {'$all': genres}}]}).count()
-
-				if (movie_count >= 10):
-					result_count = 10
+				if (len(genres) > 1):
+					# Multiple genres!
+					find_and_list.append({"genre": {'$all': genres}})
 				else:
-					result_count = movie_count
+					# Only the 1 genre
+					find_and_list.append({"genre": genres})
 
-				random_results = []
-				for movie in range(result_count):
-					if movie_count > 100:
-						random_results.append(list(db.movie.find({"$and": [{sort_target: {"$gt": target_min_value}}, {"genre": {'$all': genres}}]}, {'_id': False}).sort(sort_target, sorting).limit(1).skip(randint(0, int(movie_count/5))))[0])
-					else:
-						random_results.append(list(db.movie.find({"$and": [{sort_target: {"$gt": target_min_value}}, {"genre": {'$all': genres}}]}, {'_id': False}).sort(sort_target, sorting).limit(1).skip(randint(0, movie_count)))[0])
+			movie_count = db.movie.find({"$and": find_and_list}).count()
 
-			random_results = sorted(random_results, key=operator.itemgetter('imdbVotes', 'imdbRating'), reverse=True) # Sort the list of dicts.
+			if (movie_count >= 10):
+				result_count = 10
+			else:
+				result_count = movie_count
 
-			if (len(random_results) <= 2):
+			if (result_count <= 2):
 				google_analytics(request, 'get_random_movie_list_insufficient_movies')
 				return {'success': False,
 						'error_message': 'Insufficient movies',
 						'valid_key': True,
 						'took': float(hug_timer)}
+
+			if (movie_count > 100):
+				rnd_max_cap = int(movie_count/5)
+			else:
+				rnd_max_cap = movie_count
+
+			random_results = []
+			for movie in range(result_count):
+				random_results.append(list(db.movie.find({"$and": find_and_list}, {'_id': False}).sort(sort_target, sorting).limit(1).skip(randint(0, rnd_max_cap)))[0])
+
+			random_results = sorted(random_results, key=operator.itemgetter('imdbVotes', 'imdbRating'), reverse=True) # Sort the list of dicts.
 
 			combined_json_list = []
 			imdbID_list = []
