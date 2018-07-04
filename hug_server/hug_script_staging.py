@@ -99,7 +99,7 @@ def check_api_token(api_key):
 	"""
 	Check if the user's API key is valid.
 	"""
-  if (api_key == 'HUG_REST_API_KEY'):
+	if (api_key == 'HUG_REST_API_KEY'):
 		return True
 	else:
 		return False
@@ -358,7 +358,7 @@ def build_training_response(mongodb_result, hug_timer, remaining_count):
 	"""
 	For reducing the duplicate lines in the 'get_single_training_movie' function.
 	"""
-	return {'movie_result': mongodb_result,
+	return {'movie_result': list(mongodb_result)[0],
 			'remaining': remaining_count,
 			'success': True,
 			'valid_key': True,
@@ -390,8 +390,8 @@ def process_genres(genres):
 			processed_genres.append(genre)
 	return processed_genres
 
-@hug.get(examples='gg_id=anonymous_google_id&sort_target=imdbVotes&sort_direction=DESCENDING&genres=horror,drama&api_key=API_KEY')
-def get_single_training_movie(gg_id: hug.types.text, sort_target: hug.types.text, sort_direction: hug.types.text, genres: hug.types.multiple, api_key: hug.types.text, request, hug_timer=20):
+@hug.get(examples='gg_id=anonymous_google_id&sort_target=imdbVotes&sort_direction=DESCENDING&target_min_value=50&genres=Horror,Drama&api_key=API_KEY')
+def get_single_training_movie(gg_id: hug.types.text, sort_target: hug.types.text, sort_direction: hug.types.text, target_min_value: hug.types.number, genres: hug.types.multiple, api_key: hug.types.text, request, hug_timer=20):
 	"""
 	Get a single movie for the training bot section.
 	Retrieves a list of movies the user has previously voted for, used as a filter!
@@ -399,7 +399,7 @@ def get_single_training_movie(gg_id: hug.types.text, sort_target: hug.types.text
 	if (check_api_token(api_key) == True):
 		# API KEY VALID
 
-		allowed_targets = ["title","year","released","awards","boxoffice","imdbID","imdbRating","imdbVotes","metascore","goat_upvotes","goat_downvotes","total_goat_votes","sigir_upvotes","sigir_downvotes","total_sigir_votes"]
+		allowed_targets = ["year","released","imdbRating","imdbVotes","metascore","goat_upvotes","goat_downvotes","total_goat_votes","sigir_upvotes","sigir_downvotes","total_sigir_votes"]
 		if (sort_target not in allowed_targets):
 			google_analytics(request, 'get_single_training_movie_invalid_target')
 			return {'success': False,
@@ -420,43 +420,51 @@ def get_single_training_movie(gg_id: hug.types.text, sort_target: hug.types.text
 			* How can we maximize information gain from an individual movie?
 			* Present the most controversial movies? Users might not appreciate being shown horrible/violent movies.
 			"""
-
 			if (sort_direction == "DESCENDING"):
 				sorting = DESCENDING
 			else:
 				sorting = ASCENDING
 
-			#print("GENRES: {}".format(genres))
+			#if ((genres == []) | (genres == ["%2C"]) | (genres == [","]) | (genres == [" "]) | (genres == " ") | (genres == ["%20"])):
+			if ((genres == []) | (genres == ["NONE"])):
 
-			if ((genres == []) | (genres == ["%2C"]) | (genres == [","])):
 				# User entered no genres
-				remaining_count = db.movie.find({'imdbID': {'$nin': imdb_list}}).count()
+				inc_object = {str(sort_target): {'$gt': int(target_min_value)}}
+				inc_object = ujson.loads(ujson.dumps(inc_object))
+				remaining_count = db.movie.find({"$and": [{"imdbID": {"$nin": imdb_list}}, inc_object]}).count()
 				if (remaining_count > 0):
-					#print("Successful movie without genre")
-					result = db.movie.find({'imdbID': {'$nin': imdb_list}}, {'_id': False}).sort(sort_target, sorting).limit(1)
+					print("Successful movie without genre")
+					result = db.movie.find({"$and": [{"imdbID": {"$nin": imdb_list}}, inc_object]}, {'_id': False}).sort(sort_target, sorting).limit(1)
+					#return {'test': 0, 'inc_object': inc_object, 'remaining_count': remaining_count} #, 'result': result
 				else:
-					#print("NO non-genre movies")
+					# No results found!
+					print("UnSuccessful movie without genre")
 					return no_movies(request, hug_timer)
 			else:
 				genres = process_genres(genres)
 				# User has entered genres
-				remaining_count = db.movie.find({"$and": [{"imdbID": {"$nin": imdb_list}}, {"genre": {'$all': genres}}]}).count()
-				if (remaining_count > 0):
-					# Results found! Return 1 result to the user.
-					if (len(genres) > 1):
-						#print("genre A")
-						# More than 1 genre
+				if (len(genres) > 1):
+					# More than 1 genre
+					remaining_count = db.movie.find({"$and": [{"imdbID": {"$nin": imdb_list}}, {sort_target: {'$gt': target_min_value}}, {"genre": {'$all': genres}}]}).count()
+					if (remaining_count > 0):
+						# Results found! Return 1 result to the user.
 						result = db.movie.find({"$and": [{"imdbID": {"$nin": imdb_list}}, {"genre": {'$all': genres}}]}, {'_id': False}).sort(sort_target, sorting).limit(1)
 					else:
-						#print("genre B")
-						# Only 1 genre
-						result = db.movie.find({"$and": [{"imdbID": {"$nin": imdb_list}}, {"genre": genres}]}, {'_id': False}).sort(sort_target, sorting).limit(1)
+						# No results found!
+						return no_movies(request, hug_timer)
 				else:
-					return no_movies(request, hug_timer)
+					# Only 1 genre
+					remaining_count = db.movie.find({"$and": [{"imdbID": {"$nin": imdb_list}}, {sort_target: {'$gt': target_min_value}}, {"genre": genres}]}).count()
+					if (remaining_count > 0):
+						# Results found! Return 1 result to the user.
+						result = db.movie.find({"$and": [{"imdbID": {"$nin": imdb_list}}, {sort_target: {'$gt': target_min_value}}, {"genre": genres}]}, {'_id': False}).sort(sort_target, sorting).limit(1)
+					else:
+						# No results found!
+						return no_movies(request, hug_timer)
 
 			# Let's log then build the movie response!
 			google_analytics(request, 'get_single_training_movie_success')
-			return build_training_response(list(result)[0], hug_timer, remaining_count)
+			return build_training_response(result, hug_timer, remaining_count)
 		else:
 			# Invalid GG_ID
 			google_analytics(request, 'get_single_training_movie_id_error')
@@ -515,9 +523,9 @@ def log_clicked_item(gg_id: hug.types.text, k_mov_ts: hug.types.number, clicked_
 				'valid_key': False,
 				'took': float(hug_timer)}
 
-@hug.get(examples='gg_id=anonymous_google_id&experiment_id=1&experiment_group=0&genres=Action,Horror&sort_target=imdbVotes&sort_direction=DESCENDING&api_key=API_KEY')
-def get_random_movie_list(gg_id: hug.types.text, experiment_id: hug.types.number, experiment_group: hug.types.number, genres: hug.types.multiple, sort_target: hug.types.text, sort_direction: hug.types.text, api_key: hug.types.text, request, hug_timer=5):
-	"""Produces a list of random movies (with more than 1 imdbVotes)."""
+@hug.get(examples='gg_id=anonymous_google_id&experiment_id=1&experiment_group=0&genres=Action,Horror&sort_target=imdbVotes&target_min_value=50&sort_direction=DESCENDING&api_key=API_KEY')
+def get_random_movie_list(gg_id: hug.types.text, experiment_id: hug.types.number, experiment_group: hug.types.number, genres: hug.types.multiple, sort_target: hug.types.text, sort_direction: hug.types.text, target_min_value: hug.types.number, api_key: hug.types.text, request, hug_timer=5):
+	"""Produces a list of random movies"""
 	if (check_api_token(api_key) == True):
 		# API KEY VALID
 		user_id = get_user_id_by_gg_id(gg_id) # Get the user's movie rating user ID (incremental)
@@ -527,9 +535,11 @@ def get_random_movie_list(gg_id: hug.types.text, experiment_id: hug.types.number
 			else:
 				sorting = ASCENDING
 
-			if ((genres == []) | (genres == ["%2C"]) | (genres == [","])):
+			#if ((genres == []) | (genres == ["%2C"]) | (genres == [","]) | (genres == [" "]) | (genres == " ") | (genres == ["%20"])):
+			if ((genres == []) | (genres == ["NONE"])):
 				#print("A")
-				movie_count = db.movie.find({sort_target: {"$gt": 1}}, {'_id': False}).count()
+				#{"$and": [{"imdbID": {"$nin": imdb_list}}, {sort_target: {'$gt': target_min_value}}]}
+				movie_count = db.movie.find({sort_target: {"$gt": target_min_value}}, {'_id': False}).count()
 				if (movie_count >= 10):
 					result_count = 10
 				else:
@@ -537,15 +547,15 @@ def get_random_movie_list(gg_id: hug.types.text, experiment_id: hug.types.number
 
 				random_results = []
 				for movie in range(result_count):
-					if movie_count > 500:
-						random_results.append(list(db.movie.find({sort_target: {"$gt": 1}}, {'_id': False}).sort(sort_target, sorting).limit(1).skip(randint(0, int(movie_count/5))))[0])
+					if movie_count > 100:
+						random_results.append(list(db.movie.find({sort_target: {"$gt": target_min_value}}, {'_id': False}).sort(sort_target, sorting).limit(1).skip(randint(0, int(movie_count/5))))[0])
 					else:
-						random_results.append(list(db.movie.find({sort_target: {"$gt": 1}}, {'_id': False}).sort(sort_target, sorting).limit(1).skip(randint(0, movie_count)))[0])
+						random_results.append(list(db.movie.find({sort_target: {"$gt": target_min_value}}, {'_id': False}).sort(sort_target, sorting).limit(1).skip(randint(0, movie_count)))[0])
 			else:
 				#print("B")
 				genres = process_genres(genres)
 
-				movie_count = db.movie.find({"$and": [{sort_target: {"$gt": 1}}, {"genre": {'$all': genres}}]}).count()
+				movie_count = db.movie.find({"$and": [{sort_target: {"$gt": target_min_value}}, {"genre": {'$all': genres}}]}).count()
 
 				if (movie_count >= 10):
 					result_count = 10
@@ -554,10 +564,10 @@ def get_random_movie_list(gg_id: hug.types.text, experiment_id: hug.types.number
 
 				random_results = []
 				for movie in range(result_count):
-					if movie_count > 500:
-						random_results.append(list(db.movie.find({"$and": [{sort_target: {"$gt": 1}}, {"genre": {'$all': genres}}]}, {'_id': False}).sort(sort_target, sorting).limit(1).skip(randint(0, int(movie_count/5))))[0])
+					if movie_count > 100:
+						random_results.append(list(db.movie.find({"$and": [{sort_target: {"$gt": target_min_value}}, {"genre": {'$all': genres}}]}, {'_id': False}).sort(sort_target, sorting).limit(1).skip(randint(0, int(movie_count/5))))[0])
 					else:
-						random_results.append(list(db.movie.find({"$and": [{sort_target: {"$gt": 1}}, {"genre": {'$all': genres}}]}, {'_id': False}).sort(sort_target, sorting).limit(1).skip(randint(0, movie_count)))[0])
+						random_results.append(list(db.movie.find({"$and": [{sort_target: {"$gt": target_min_value}}, {"genre": {'$all': genres}}]}, {'_id': False}).sort(sort_target, sorting).limit(1).skip(randint(0, movie_count)))[0])
 
 			random_results = sorted(random_results, key=operator.itemgetter('imdbVotes', 'imdbRating'), reverse=True) # Sort the list of dicts.
 
@@ -691,7 +701,7 @@ def build_movie_json(mongodb_result, hug_timer):
 
 	return combined_json_list
 
-@hug.get(examples='genres=horror,drama&vote_target=goat_upvotes&api_key=API_KEY')
+@hug.get(examples='genres=Horror,Drama&vote_target=goat_upvotes&api_key=API_KEY')
 def get_goat_movies(genres: hug.types.multiple, vote_target: hug.types.text, api_key: hug.types.text, request, hug_timer=5):
 	"""Get a list of the most upvoted (GOAT) movies."""
 	if (check_api_token(api_key) == True):
@@ -701,7 +711,8 @@ def get_goat_movies(genres: hug.types.multiple, vote_target: hug.types.text, api
 		if vote_target in allowed_vote_targets:
 			# Allowed vote target
 
-			if ((genres == []) | (genres == ["%2C"]) | (genres == [","])):
+			#if ((genres == []) | (genres == ["%2C"]) | (genres == [","]) | (genres == [" "]) | (genres == " ") | (genres == ["%20"])):
+			if ((genres == []) | (genres == ["NONE"])):
 				movie_count = db.movie.find({vote_target: {"$gt": 1}}).count()
 
 				if (movie_count > 0):
@@ -802,7 +813,10 @@ def create_experiment_values(intent: hug.types.text, api_key: hug.types.text, fu
 			parameter_holder = {}
 			for parameter in parameters_0:
 				keyval = parameter.split(":")
-				parameter_holder[keyval[0]] = keyval[1]
+				if keyval[1].isnumeric():
+					parameter_holder[keyval[0]] = int(keyval[1])
+				else:
+					parameter_holder[keyval[0]] = keyval[1]
 			parameters_0 = parameter_holder
 		else:
 			parameters_0 = {}
@@ -811,7 +825,10 @@ def create_experiment_values(intent: hug.types.text, api_key: hug.types.text, fu
 			parameter_holder = {}
 			for parameter in parameters_1:
 				keyval = parameter.split(":")
-				parameter_holder[keyval[0]] = keyval[1]
+				if keyval[1].isnumeric():
+					parameter_holder[keyval[0]] = int(keyval[1])
+				else:
+					parameter_holder[keyval[0]] = keyval[1]
 			parameters_1 = parameter_holder
 		else:
 			parameters_1 = {}
