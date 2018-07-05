@@ -64,8 +64,9 @@ def generate_ml_id():
 	"""
 	Generate a new ID which will be compatible with the machine learning components.
 	"""
-	user_count = db.Users.find().count()
-	return user_count + 1
+	user_count = db.Users.find({}, {'_id':0, 'userId': 1}).sort('userId', DESCENDING).limit(1)
+	user_count = list(user_count)[0]
+	return user_count['userId'] + 1
 
 def get_user_id_by_gg_id(gg_id):
 	"""
@@ -120,9 +121,37 @@ def create_user(gg_id: hug.types.text, api_key: hug.types.text, request, hug_tim
 		if (result == 0):
 			# User doesn't exist, create the user!
 			ml_id = generate_ml_id()
-			user_name = ""
 
-			db.Users.insert_one({"gg_id": gg_id, "name": user_name, "userId": ml_id, "total_movie_votes": 0, "total_movie_upvotes": 0, "total_movie_downvotes": 0, "ab_testing": 0})
+			db.Users.insert_one({"gg_id": gg_id, "userId": ml_id, "total_movie_votes": 0, "total_movie_upvotes": 0, "total_movie_downvotes": 0, "ab_testing": 0})
+
+			user_genre_object = {
+				"Action": {"up": 0, "down": 0},
+				"Adventure": {"up": 0, "down": 0},
+				"Animation": {"up": 0, "down": 0},
+				"Biography": {"up": 0, "down": 0},
+				"Comedy": {"up": 0, "down": 0},
+				"Crime": {"up": 0, "down": 0},
+				"Documentary": {"up": 0, "down": 0},
+				"Drama": {"up": 0, "down": 0},
+				"Family": {"up": 0, "down": 0},
+				"Fantasy": {"up": 0, "down": 0},
+				"Film-Noir": {"up": 0, "down": 0},
+				"Horror": {"up": 0, "down": 0},
+				"History": {"up": 0, "down": 0},
+				"Musical": {"up": 0, "down": 0},
+				"Mystery": {"up": 0, "down": 0},
+				"Romance": {"up": 0, "down": 0},
+				"Sci-Fi": {"up": 0, "down": 0},
+				"Short": {"up": 0, "down": 0},
+				"Sport": {"up": 0, "down": 0},
+				"Thriller": {"up": 0, "down": 0},
+				"War": {"up": 0, "down": 0},
+				"Western": {"up": 0, "down": 0},
+				"userId": ml_id
+			}
+
+			db.user_genre_vote_tally.insert_one(json.loads(json.dumps(user_genre_object)))
+
 			google_analytics(request, 'create_user_success')
 			return {'user_existed': False,
 					'created_user': True,
@@ -794,8 +823,8 @@ def create_experiment_values(intent: hug.types.text, api_key: hug.types.text, fu
 	"""Create experiments on the fly! You can specify 2 different HUG functions & different parameters for both. Assign an integer value for each, reating a custom ratio of A:B occurrence."""
 	if (check_api_token(api_key) == True):
 		# API KEY VALID
-		quantity_existing_experiments = db.experiment_tracker.find().count()
-		experiment_id = quantity_existing_experiments + 1
+		quantity_existing_experiments = db.experiment_tracker.find({}, {'_id': 0, 'experiment_id': 1}).sort('experiment_id', DESCENDING).limit(1)
+		experiment_id = list(quantity_existing_experiments)[0]['experiment_id'] + 1
 
 		if parameters_0 != [' ']:
 			parameter_holder = {}

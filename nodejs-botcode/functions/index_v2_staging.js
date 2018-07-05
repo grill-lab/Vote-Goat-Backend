@@ -11,15 +11,16 @@ let chatbase = require('@google/chatbase')
               .setApiKey('CHATBASE_API_KEY') // Your Chatbase API Key
               .setPlatform('Google Assistant'); // The type of message you are sending to chatbase: user (user) or agent (bot)
 
-const hug_host = 'https://staging.domain.tld';
+const hug_host = 'https://subdomain.domain.tld';
 
 const app = dialogflow({
+  // Creating the primary dialogflow app element
   debug: true,
   verification: {
-    // Get the header key and value from dialogflow fullfilment page!
-    'HEADER_KEY': 'HEADER_VALUE',
+    // Dialogflow authentication
+    'key': 'value',
   }
-}); // Creating the primary dialogflow app element
+});
 
 ////////////// Helper functions
 
@@ -1100,7 +1101,7 @@ function get_single_unrated_movie(conv, movieGenre) {
                       text: `IMDB Rating: ${imdbRating}  Genres: ${genre_list}  Age rating: ${rate_desc}`,
                       buttons: new Button({
                         title: `🍿 Watch "${movieTitle}"`,
-                        url: `https://play.google.com/store/search?q=${movieTitle}&c=movies`,
+                        url: `https://chatbase.com/r?api_key=CHATBASE_API_KEY&url=https://play.google.com/store/search?q=${movieTitle}&c=movies`,
                       }),
                       image: { // Mostly, you can provide just the raw API objects
                         url: `${posterURL}`,
@@ -1300,7 +1301,7 @@ app.intent('moreMovieInfo', (conv) => {
       conv.data.fallbackCount = 0; // Required for tracking fallback attempts! // Required for tracking fallback attempts!
 
       const requested_mode = conv.contexts.get('vote_context').parameters['mode']; // Retrieving the expected voting mode (within a list, or during training)!
-      const movie_imdb_id = conv.contexts.get('vote_context').parameters['movie']; // Retrieving the movie we want to downvote!
+      const movie_imdb_id = conv.contexts.get('vote_context').parameters['movie']; // Retrieving the movie
       const movie_title = conv.contexts.get('vote_context').parameters['title']; // Retrieving the title
       let movie_plot = conv.contexts.get('vote_context').parameters['plot']; // Retrieving the plot
 
@@ -1339,15 +1340,30 @@ app.intent('moreMovieInfo', (conv) => {
         "movie": movie_imdb_id
       });
 
-      const textToSpeech_prequel = `<speak>` +
-        `Here's more info on ${movie_title}! <break time="0.5s" /> ` +
-        `${movie_title} is an ${conv.contexts.get('vote_context').parameters['genres']} movie which was released in the year ${conv.contexts.get('vote_context').parameters['year']}, it was directed by ${conv.contexts.get('vote_context').parameters['directors']} and currently has an IMDB rating of ${conv.contexts.get('vote_context').parameters['imdb_rating']} out of 10. <break time="0.35s" /> ` +
-        `The cast of ${movie_title} is primarily comprised of ${conv.contexts.get('vote_context').parameters['actors']}. <break time="0.25s" /> ` +
-        `</speak>`;
+      let textToSpeech_prequel = `<speak>Here's more info on ${movie_title}! <break time="0.5s" /> ${movie_title}`;
+      let textToDisplay_prequel = `Here's more info on ${movie_title}!\n\n`;
 
-      const textToDisplay_prequel = `Would you watch ${movie_title}? \n\n` +
-          `Released in ${conv.contexts.get('vote_context').parameters['year']}, it was directed by ${conv.contexts.get('vote_context').parameters['directors']} and it currently has an IMDB rating of ${conv.contexts.get('vote_context').parameters['imdb_rating']}/10. \n\n` +
-          `The cast of ${movie_title} is primarily comprised of ${conv.contexts.get('vote_context').parameters['actors']}.`;
+      if (conv.contexts.get('vote_context').parameters['year'] != null) {
+        textToSpeech_prequel += ` was released in the year ${conv.contexts.get('vote_context').parameters['year']},`
+        textToDisplay_prequel += `Released in ${conv.contexts.get('vote_context').parameters['year']}.\n`;
+      }
+      if (conv.contexts.get('vote_context').parameters['genres'] != null) {
+        textToSpeech_prequel += ` it's an ${conv.contexts.get('vote_context').parameters['genres']} movie,`;
+        textToDisplay_prequel += `Genres: ${conv.contexts.get('vote_context').parameters['genres']}\n.`;
+      }
+      if (conv.contexts.get('vote_context').parameters['directors'] != null) {
+        textToSpeech_prequel += ` it was directed by ${conv.contexts.get('vote_context').parameters['directors']} and`;
+        textToDisplay_prequel += `Director(s) ${conv.contexts.get('vote_context').parameters['directors']}.\n`;
+      }
+      if (conv.contexts.get('vote_context').parameters['imdb_rating'] != null) {
+        textToSpeech_prequel += ` it currently has an IMDB rating of ${conv.contexts.get('vote_context').parameters['imdb_rating']} out of 10. <break time="0.35s" /> `;
+        textToDisplay_prequel += `IMDB rating: ${conv.contexts.get('vote_context').parameters['imdb_rating']}/10. \n`;
+      }
+      if (conv.contexts.get('vote_context').parameters['actors'] != null) {
+        textToSpeech_prequel += ` The cast of ${movie_title} is primarily comprised of ${conv.contexts.get('vote_context').parameters['actors']}. <break time="0.25s" /> `;
+        textToDisplay_prequel += `Cast: ${conv.contexts.get('vote_context').parameters['actors']}.\n`;
+      }
+      textToSpeech_prequel += `</speak>`;
 
       const textToSpeech = `<speak>` +
         `Warning! ${movie_title} plot spoilers! <break time="0.75s" /> ` +
@@ -1487,7 +1503,6 @@ app.intent('goat', (conv, { movieGenre }) => {
                   goat_voice += `${movie_title}, <break time="0.3s" />`;
                 }
               }
-
 
               var goat_movies_list; // Temp variable
 
@@ -1830,6 +1845,8 @@ app.intent('recommend_movie', (conv, { movieGenre }) => {
               'Win' // win_or_fail
             );
 
+            store_repeat_response(conv, 'recommendMovie', 'Alright, here are a few movies which I think you will like!', 'Alright, here are a few movies which I think you will like!'); // Storing repeat info
+
             conv.contexts.set('recommend_movie_context', 1, {
               "placeholder": "placeholder",
               "repeatedCarousel": carousel_items
@@ -2100,7 +2117,7 @@ app.intent('item.selected', (conv, input, option) => {
               text: `Plot: ${movie_element.plot}`,
               buttons: new Button({
                 title: `🍿 Google Play Search`,
-                url: `https://play.google.com/store/search?q=${movie_element.title}&c=movies`,
+                url: `https://chatbase.com/r?api_key=CHATBASE_API_KEY&url=https://play.google.com/store/search?q=${movie_element.title}&c=movies`,
               }),
               image: { // Mostly, you can provide just the raw API objects
                 url: `${(movie_element.poster_url).replace("http://", "https://")}`, // NO HTTP ALLOWED!
@@ -2325,7 +2342,6 @@ app.intent('goodbye', conv => {
     'Win' // win_or_fail
   );
 
-  conv.data = {};
   conv.close(
     new SimpleResponse({
       // Sending the details to the user
@@ -2376,17 +2392,23 @@ function where_to_watch_helper (conv) {
 
       var suggestions;
 
-      if (requested_mode === 'list_selection') {
-        suggestions = [`👍`, `👎`, '🗳 Rank Movies',  '💾 SIGIR demo', '🎥 SIGIR Movies', `🐐 GOAT Movies`, '🏆 Show Stats', '📑 Help'];
+      if (conv.contexts.get('vote_context').parameters['mode'] === 'list_selection') {
+        console.log(`DEBUG WATCH LIST SELECTION: ${conv.user.storage.last_intent_name}`);
+        if (conv.user.storage.last_intent_name == 'voted') {
+          suggestions = ['🗳 Rank Movies', `🤔 recommend me a movie`, '💾 SIGIR demo', '🎥 SIGIR Movies', `🐐 GOAT Movies`, '🏆 Show Stats', '📑 Help'];
+        } else {
+          suggestions = [`👍`, `👎`, '🗳 Rank Movies',  '💾 SIGIR demo', '🎥 SIGIR Movies', `🐐 GOAT Movies`, '🏆 Show Stats', '📑 Help'];
+        }
       } else {
+        console.log(`DEBUG WATCH LIST ELSE: ${conv.user.storage.last_intent_name}`);
         suggestions = [`👍`, `👎`, `🤔 recommend me a movie`,  '💾 SIGIR demo', '🎥 SIGIR Movies', `🐐 GOAT Movies`, '🏆 Show Stats', '📑 Help'];
       }
 
       store_fallback_response(conv, fallback_messages, suggestions);
 
       conv.contexts.set('vote_context', 1, { // Specifying the data required to vote!
-        "mode": requested_mode,
-        "movie": movie_imdb_id
+        "mode": conv.contexts.get('vote_context').parameters['mode'],
+        "movie": conv.contexts.get('vote_context').parameters['movie']
       });
 
       const textToSpeech = `<speak>` +
@@ -2395,7 +2417,7 @@ function where_to_watch_helper (conv) {
 
       const textToDisplay = `Try a few of the following links, availability of "${movie_title}" may differ depending on geographic location.`;
 
-      store_repeat_response(conv, 'moreMovieInfo', textToSpeech, textToDisplay); // Storing repeat info
+      store_repeat_response(conv, 'where_to_watch', textToSpeech, textToDisplay); // Storing repeat info
 
       chatbase_analytics(
         conv,
@@ -2419,7 +2441,7 @@ function where_to_watch_helper (conv) {
         */
         {
           'title': 'Google Play',
-          'url': `https://play.google.com/store/search?q=${movie_title}&c=movies`,
+          'url': `https://chatbase.com/r?api_key=CHATBASE_API_KEY&url=https://play.google.com/store/search?q=${movie_title}&c=movies`,
           'img_url': `https://www.gstatic.com/android/market_images/web/play_prism_hlock_2x.png`, //TODO: CHANGE HOTLINK
           'img_alt': `Google Play logo`,
           'description': `Potentially available to rent/buy via the Google Play movie store.`,
@@ -2427,7 +2449,7 @@ function where_to_watch_helper (conv) {
         },
         {
           'title': 'Netflix',
-          'url': `https://www.netflix.com/search?q=${movie_title}`,
+          'url': `https://chatbase.com/r?api_key=CHATBASE_API_KEY&url=https://www.netflix.com/search?q=${movie_title}`,
           'img_url': `https://i.imgur.com/YblTE8T.png`, // TODO: Not use imgur
           'img_alt': `Netflix logo`,
           'description': `Potentially available via Netflix subscription.`,
@@ -2435,7 +2457,7 @@ function where_to_watch_helper (conv) {
         },
         {
           'title': 'Justwatch',
-          'url': `https://www.justwatch.com/`,
+          'url': `https://chatbase.com/r?api_key=CHATBASE_API_KEY&url=https://www.justwatch.com/`,
           'img_url': `https://www.justwatch.com/company/assets/JustWatch-icon.png`,
           'img_alt': `Justwatch logo`,
           'description': `Justwatch is an EU funded legal streaming search engine service, saving you time searching!`,
@@ -2443,7 +2465,7 @@ function where_to_watch_helper (conv) {
         },
         {
           'title': 'GoWatchIt',
-          'url': `https://gowatchit.com/search?terms=${movie_title}`,
+          'url': `https://chatbase.com/r?api_key=CHATBASE_API_KEY&url=https://gowatchit.com/search?terms=${movie_title}`,
           'img_url': `https://i.imgur.com/nJc4F4I.png`,
           'img_alt': `GoWatchIt logo`,
           'description': `GoWatchIt (US-only) provides movie search across many services.`,
@@ -2451,7 +2473,7 @@ function where_to_watch_helper (conv) {
         },
         {
           'title': 'ReelGood',
-          'url': `https://reelgood.com/search?q=${movie_title}`,
+          'url': `https://chatbase.com/r?api_key=CHATBASE_API_KEY&url=https://reelgood.com/search?q=${movie_title}`,
           'img_url': `https://i.imgur.com/e2gDcVK.png`,
           'img_alt': `ReelGood logo`,
           'description': `Search engine for streaming content.`,
@@ -2459,7 +2481,7 @@ function where_to_watch_helper (conv) {
         },
         {
           'title': 'Amazon Prime',
-          'url': `https://www.amazon.co.uk/s/?url=search-alias%3Dprime-instant-video&field-keywords=${movie_title}`,
+          'url': `https://chatbase.com/r?api_key=CHATBASE_API_KEY&url=https://www.amazon.co.uk/s/?url=search-alias%3Dprime-instant-video&field-keywords=${movie_title}`,
           'img_url': `https://m.media-amazon.com/images/G/02/digital/video/New_MLP/Prime_Smile_logo_133x80.png`,
           'img_alt': `Amazon Prime logo`,
           'description': `Potentially available to rent/buy or view for free through Prime subscription.`,
@@ -2467,7 +2489,7 @@ function where_to_watch_helper (conv) {
         },
         {
           'title': 'Google search',
-          'url': `https://www.google.com/search?q=watch+${movie_title}+online`,
+          'url': `https://chatbase.com/r?api_key=CHATBASE_API_KEY&url=https://www.google.com/search?q=watch+${movie_title}+online`,
           'img_url': `https://i.imgur.com/1hjxlJ5.png`,
           'img_alt': `Google logo`,
           'description': `Perform a google search.`,
@@ -3079,7 +3101,7 @@ app.intent('voted', (conv, { voting }) => {
                   'Win' // win_or_fail
                 );
 
-                if (conv.surface.capabilities.has('actions.capability.SCREEN_OUTPUT') && conv.surface.capabilities.has('actions.capability.WEB_BROWSER')) {
+                if (conv.surface.capabilities.has('actions.capability.SCREEN_OUTPUT') && conv.surface.capabilities.has('actions.capability.WEB_BROWSER') && conv.user.storage.last_intent_name !== 'where_to_watch') {
                   /*
                     The user has a screen & liked the movie - let's show them where to watch it!
                   */
@@ -3092,7 +3114,7 @@ app.intent('voted', (conv, { voting }) => {
                     })
                   );
                   */
-
+                  conv.user.storage.last_intent_name = 'voted';
                   return where_to_watch_helper(conv);
 
                 } else {
@@ -3198,6 +3220,84 @@ app.intent('voted', (conv, { voting }) => {
   }
 });
 
+app.intent('repeat', conv => {
+  /*
+    Google tips:
+    Create a repeat intent that listens for prompts to repeat from the user like "what?", "say that again", or "can you repeat that?".
+    In the repeat intent handler, call ask() with a concatenated string of the repeat prefix and the value of conv.data.lastPrompt.
+    Keep in mind that you'll have to shift any ssml opening tags if used in the last prompt.
+    https://developers.google.com/actions/assistant/best-practices#let_users_replay_information
+  */
+
+  const textToSpeech = conv.data.last_intent_prompt_speech; // The last speech bubble
+  const textToDisplay = conv.data.last_intent_prompt_text; // The last text displayed
+  const intent_name = conv.data.last_intent_name; // The last intent the user was at
+  const suggestions = conv.data.suggestions;
+
+  if (intent_name === 'recommendMovie') {
+    // Rather than confuse things, let's just send the use onwards to the movie recommendation fallback.
+    chatbase_analytics(conv, `User requested repeat!`, `repeat.carousel`, 'Fail');
+    return genericFallback(conv, 'ItemSelected.fallback');
+  }
+
+  if (typeof(conv.data.fallbackCount) === "undefined") {
+    // The fallback counter didn't exist
+    conv.data.fallbackCount = 0
+  } else {
+    // The fallback counter exists
+    const temp_count = conv.data.fallbackCount;
+    if (temp_count >= 2) {
+      // Quit like normal fallbacks
+      conv.close(`Sorry that I couldn't articulate myself, try again later!`);
+    } else {
+      // Iterate & move on
+      conv.data.fallbackCount = temp_count + 1;
+    }
+  }
+
+  if ((textToSpeech != null) && (textToDisplay != null) && (suggestions != null) && (intent_name != null)) {
+    // The required context data exists
+    const repeat_responses = [
+      `Sorry, I said`,
+      `Let me repeat that`,
+      `No worries, i'll repeat myself.`,
+      `Sure, I said`,
+      `I'll repeat that`
+    ];
+
+    const chosen_repeat_response = repeat_responses[Math.floor(Math.random() * repeat_responses.length)];
+
+    conv.ask(
+      // We don't need anything other than simple response, as screen devices can simply scroll up to see past content.
+      new SimpleResponse({
+        // Sending the details to the user
+        speech: `<speak>${chosen_repeat_response}</speak>`,
+        text: chosen_repeat_response
+      })
+    );
+
+    if (conv.surface.capabilities.has('actions.capability.SCREEN_OUTPUT')) {
+      conv.ask(
+        new Suggestions(suggestions.split(','))
+      );
+    }
+
+    conv.ask(
+      // We don't need anything other than simple response, as screen devices can simply scroll up to see past content.
+      new SimpleResponse({
+        // Sending the details to the user
+        speech: textToSpeech,
+        text: textToDisplay
+      })
+    );
+
+    chatbase_analytics(conv, `User requested repeat!`, `repeat.carousel`, 'Win');
+  } else {
+    // Failed to repeat response
+    return catch_error(conv, 'No stored repeat response!', 'Repeat_Error');
+  }
+});
+
 
 //////////// Fallback Intents
 
@@ -3253,21 +3353,6 @@ app.intent('SIGIR_Movies.fallback', conv => {
   chatbase_analytics(conv, `Handled user fallback prompt!`, `input.unknown.${conv.user.storage.last_intent_name}`, 'Fail');
   return genericFallback(conv, 'SIGIR_Movies.fallback');
 });
-
-/*
-app.intent('Welcome - fallback', 'input.unknown');
-app.intent('dislike.all.recommendations - fallback', 'input.unknown');
-app.intent('getHelpAnywhere - fallback', 'input.unknown');
-app.intent('getLeaderBoards - fallback', 'input.unknown');
-app.intent('goat - fallback', 'input.unknown');
-app.intent('moreMovieInfo - fallback', 'input.unknown');
-app.intent('Training - fallback', 'input.unknown');
-app.intent('voted - fallback', 'input.unknown');
-app.intent('ItemSelected.Fallback', 'input.unknown');
-app.intent('where_to_watch-fallback', 'input.unknown');
-app.intent('SIGIR-fallback', 'input.unknown');
-app.intent('SIGIR_Movies-fallback', 'input.unknown');
-*/
 
 app.intent('input.unknown', conv => {
   /*
