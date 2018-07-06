@@ -237,6 +237,7 @@ function store_movie_data (conv, mode, movieID, movieTitle, plot, year, imdb_rat
 
   /*
     User storage - persists between conversations!
+    Could remove, but its extra data in dialogflow logs 👍
   */
   conv.user.storage.voting_mode = mode;
   conv.user.storage.voting_movieID = movieID;
@@ -792,10 +793,14 @@ function genericFallback(conv, intent_name) {
   /*
   Generic fallback function
   */
-  console.warn("GENERIC FALLBACK TRIGGERED!");
+  //console.warn("GENERIC FALLBACK TRIGGERED!");
   const fallback_name = intent_name + '_Fallback';
 
   //console.log(util.inspect(conv, false, null)); // DEBUG function!
+
+  if (!(conv.data).hasOwnProperty('fallbackCount')) {
+    conv.data.fallbackcount = 0;
+  }
 
   //console.log(`Generic fallback count: ${conv.data.fallbackCount}`);
   if (conv.data.fallbackCount >= 2) {
@@ -815,9 +820,26 @@ function genericFallback(conv, intent_name) {
     const speech_target = 'fallback_speech_' + (conv.data.fallbackCount).toString();
     conv.data.fallbackCount++; // Iterate the fallback counter
 
-    const fallback_text = conv.data[text_target];
-    const fallback_speech = conv.data[speech_target];
-    const suggestions = (conv.data.suggestions).split(', ');
+    let fallback_text;
+    let fallback_speech;
+    let suggestions;
+    if ((conv.data).hasOwnProperty(text_target)) {
+      fallback_text = conv.data[text_target];
+    } else {
+      fallback_text = 'Sorry, what do you want to do next?';
+    }
+    if ((conv.data).hasOwnProperty(speech_target)) {
+      // There was
+      fallback_speech = conv.data[speech_target];
+    } else {
+      fallback_speech = '<speak>Sorry, what do you want to do next?</speak>'
+    }
+    if ((conv.data).hasOwnProperty('suggestions')) {
+      // There were suggestions stored in conv data.
+      suggestions = (conv.data.suggestions).split(', ');
+    } else {
+      suggestions = ['🗳 Rank Movies', '🤔 Movie Recommendation', '🏆 Show Stats', '💾 SIGIR demo', '🎥 SIGIR Movies', `🐐 GOAT Movies`, '📑 Help', `🚪 Quit`];
+    }
 
     store_repeat_response(conv, fallback_name, fallback_speech, fallback_text); // Enabling the user to repeat the fallback text...
 
@@ -2106,8 +2128,8 @@ app.intent('recommend_movie.fallback', (conv) => {
       /*
         Displaying carousel fallback & forwarding contexts in case of subsequent carousel fallbacks
       */
-      forward_contexts(conv, 'carousel_fallback', 'recommendation_context', 'recommendation_context');
-      forward_contexts(conv, 'carousel_fallback', 'list_body', 'list_body');
+      //forward_contexts(conv, 'carousel_fallback', 'recommendation_context', 'recommendation_context');
+      //forward_contexts(conv, 'carousel_fallback', 'list_body', 'list_body');
 
       const textToSpeech = `<speak>${CAROUSEL_FALLBACK_DATA[current_fallback_value]}</speak>`;
       const textToDisplay = CAROUSEL_FALLBACK_DATA[current_fallback_value];
