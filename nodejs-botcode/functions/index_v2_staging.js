@@ -18,11 +18,25 @@ const app = dialogflow({
   debug: true,
   verification: {
     // Dialogflow authentication
-    'key': 'value',
+    'key': 'value'
   }
 });
 
 ////////////// Helper functions
+
+function erase_storage_data (conv) {
+  /*
+    We're storing data but not clearing it up, we should erase some of it occassionally!
+  */
+  const targets_to_erase = ['voting_move', 'voting_movieID', 'voting_movieTitle', 'voting_moviePlot', 'voting_movieYear', 'voting_genres', 'voting_actors', 'voting_director', 'useridstorage_user_1'];
+
+  var target_length = targets_to_erase.length;
+  for (var i = 0; i < target_length; i++) {
+    if ((conv.user.storage).hasOwnProperty(targets_to_erase[i])) {
+      conv.user.storage[targets_to_erase[i]] = "";
+    }
+  }
+}
 
 function catch_error(conv, error_message, intent) {
   /*
@@ -40,6 +54,9 @@ function catch_error(conv, error_message, intent) {
   } else {
       console.error(new Error(error_message));
   }
+
+  // Let's clean up the old data:
+  erase_storage_data(conv);
 
   return conv.close(
       new SimpleResponse({
@@ -636,63 +653,21 @@ function setup_experiment (conv, intent_name, movieGenreParameter) {
 
 ////////////// UserId related:
 
+////////////// UserId related:
+
 function lookup_user_id (conv) {
   /*
-    Function to retrieve user Id cleanly.
-    Overly elaborate, could be simplified.
+    Simplify retrieving userId
   */
-  const retrieved_user_id = conv.user.id;
-
-  if (typeof retrieved_user_id !== 'undefined' && retrieved_user_id) {
-    /*
-      This should always trigger, unless an issue occurs with the Google Assistant itself..
-    */
-    return retrieved_user_id
-  } else {
-    /*
-      Should never occur!
-      Perhaps throw an error?
-    */
-    return 'INVALID';
-  }
-}
-
-function isIdValid (conv) {
-  /*
-    The vast majority of userIds logged had length 86-87 characters
-    Approx 10% of userIds logged had length of 13 characters.
-    We're assuming that >= 80 is valid, however since this is a random identifier this check may need to change in the future!
-  */
-  const retrieved_user_id = lookup_user_id(conv);
-
-  if (retrieved_user_id.length >= 80) {
-    return true;
-  } else {
-
-    if (!conv.surface.capabilities.has('actions.capability.SCREEN_OUTPUT')) {
-      // This is a speaker!
-      // We could check if speakers are the cause of 13 char long userId.
-      console.log(`isIdValid: UserID length < 80 (${retrieved_user_id.length}) & audio-only device!`);
-    }
-    return false;
-  }
+  return conv.user.id;
 }
 
 function register_userId (conv, user_id_string) {
   /*
     Registering an input UserId in MongoDB
-    Doesn't return anything, it just does its' thing.
   */
-  const qs_input = {
-    //  HUG REST GET request parameters
-    gg_id: user_id_string, // Anon Google ID from above
-    user_name: 'none_supplied', // TODO: REMOVE THIS LINE - Needs a change in both HUG and MongoDB.
-    api_key: 'HUG_REST_API_KEY'
-  };
-
-  return hug_request('HUG', 'create_user', 'GET', qs_input)
+  return hug_request('HUG', 'create_user', 'GET', {gg_id: user_id_string, api_key: 'HUG_REST_API_KEY'})
   .then(body => {
-    /*
     const user_existed = body.user_existed;
     const created_user = body.created_user;
 
@@ -703,7 +678,6 @@ function register_userId (conv, user_id_string) {
       // The UserId was unseen on the mobile device, but already registered on MongoDB.
       console.log("Account already existed!");
     }
-    */
   })
   .catch(error_message => {
     return catch_error(conv, error_message, 'user_registration');
@@ -712,98 +686,35 @@ function register_userId (conv, user_id_string) {
 
 function parse_userId (conv) {
   /*
-    Purpose of this function is to temporarily store the user's userIds in the user's local storage.
-    This can help us track how frequently it changes, and to significantly reduce attempted userId registration attempts.
-    User storage is wiped upon crash, so this is not a long term solution.
+    Look up userId in local storage, if non-existant then register userId, otherwise return the existing userId.
+    TODO: Migrate to Google's single sign on authentication mechanism & identify users by hash+salted google account id.
     https://developers.google.com/actions/identity/user-info
   */
-  var retrieved_id_storage = conv.user.storage.useridstorage; // TODO: Verify this storage works!
-  var user_gg_id = lookup_user_id(conv);
 
-  if (isIdValid(conv) === true) {
-
-    if (typeof retrieved_id_storage !== 'undefined' && retrieved_id_storage) {
-      /*
-        The UserId storage object exists, let's check its contents!
-      */
-      var temp_id_check = false; // Set before the loop
-      var iteration_count = 0; // Keeping track of how many iterations were performed
-
-      for (var iterator = 1; iterator <= retrieved_id_storage.length; iterator++) {
-        // Loop over each
-        iteration_count++;
-        const iterator_string = iterator.toString();
-        if (retrieved_id_storage['user_' + iterator_string] === user_gg_id) {
-          // The UserId was previously stored in user storage
-          temp_id_check = true;
-          break;
-        }
-      }
-
-      if (temp_id_check === true) {
-        /*
-          UserId is already present, return the id without performing registration
-        */
-        return user_gg_id;
-      } else {
-        /*
-          The UserId is valid & was unseen in the above loo -> we need to register it.
-          Once registered, return the UserId.
-        */
-        register_userId(conv, user_gg_id);
-        iteration_count++; // We want to target the next value!
-        const target_user_string = 'user_' + iteration_count.toString(); // 'user_#' //TODO: Verify that this works, may need to split into 2 lines!
-        retrieved_id_storage[target_user_string] = user_gg_id; // Storing the newest UserId
-        return user_gg_id; // Use the latest!
-      }
-
+  if ((conv.user.storage).hasOwnProperty('useridstorage')) {
+    /*
+      The 'useridstorage' object exists, let's check its contents!
+    */
+    if (conv.user.storage.useridstorage === lookup_user_id(conv)) {
+      // The UserId was previously stored in user storage
+      console.log(`Property exists - returned ${lookup_user_id(conv)}`);
+      return lookup_user_id(conv); // Return the user's id
     } else {
-      /*
-        The UserId storage did not exist.
-        Register user & store data locally!
-      */
-      var retrieved_id = lookup_user_id(conv);
-      conv.user.storage.useridstorage_user_1 = retrieved_id;
-      //retrieved_id_storage.user_1 = user_gg_id;
-      register_userId(conv, retrieved_id);
-      return retrieved_id; // Return the user's id
+      // UserId has not been seen before - replace the stored item & register the new userId
+      console.log(`Non matching existing property - registered & returned ${lookup_user_id(conv)}`);
+      register_userId(conv, lookup_user_id(conv));
+      conv.user.storage.useridstorage = lookup_user_id(conv); // Storing the newest UserId
+      return lookup_user_id(conv); // Return the user's id
     }
   } else {
     /*
-      UserId is INVALID! (Q: The anon UserId is random, so too its length?)
-      ---
-      Checking the local user storage for the existence of a past valid UserId!
-      If present, we'll use it - enabling guests to use our bot yet still contribute towards the host's leaderboard rankings.
+      The UserId storage did not exist.
+      Register user & store data!
     */
-    if (typeof retrieved_id_storage.user_1 !== 'undefined' && retrieved_id_storage.user_1) {
-      /*
-        The user_1 object exists, let's return it!
-        TODO: Must verify whether or not local user storage can be manipulated by the user!
-      */
-      return retrieved_id_storage.user_1;
-    } else {
-      /*
-        The user has an invalid UserId & they also do not have a previously stored UserId!
-        What do we do with them?
-        TODO: Figure out how to respond to this type of user? Kick them out? Just return the invalid Id & let them carry on as usual? hmm..
-        TODO: Prompt for more permissions? Can we re-prompt their personalization setting selection?
-      */
-      if (typeof retrieved_id_storage.unknown_1 !== 'undefined' && retrieved_id_storage.unknown_1) {
-        /*
-          A past unknown id was already registered, let's return that instead!
-          TODO: Compare current unknown UserId & the stored unknown UserId for greater validity?
-        */
-        return retrieved_id_storage.unknown_1;
-      } else {
-        /*
-          This occurrence of an unknown id, register it & store it in the local storage.
-        */
-
-        retrieved_id_storage.unknown_1 = user_gg_id;
-        register_userId(conv, user_gg_id);
-        return user_gg_id;
-      }
-    }
+    console.log(`Property non-existant - registered & returned ${lookup_user_id(conv)}`)
+    conv.user.storage.useridstorage = lookup_user_id(conv);
+    register_userId(conv, lookup_user_id(conv));
+    return lookup_user_id(conv); // Return the user's id
   }
 }
 
@@ -1066,10 +977,12 @@ function get_single_unrated_movie(conv, movieGenre) {
             .then(() => {
               const ranking_text = [
                 `Would you watch "${movieTitle}"?`,
-                `What about "${movieTitle}"?`,
-                `How about "${movieTitle}"?`,
+                `Do you like "${movieTitle}"?`,
+                `Is "${movieTitle}" worth watching?`,
+                `What about "${movieTitle}"? Any good?`,
+                `How about "${movieTitle}"? Would you watch it?`,
                 `Considered watching "${movieTitle}?"`,
-                `What do you think of ${movieTitle}?`
+                `What do you think of "${movieTitle}"?`
               ];
 
               const chosen_ranking_text = ranking_text[Math.floor(Math.random() * ranking_text.length)];
@@ -1177,6 +1090,9 @@ app.intent('Welcome', conv => {
   The welcome intent is the main menu, they arrive here if they launch the bot via the Google Assistant explorer.
   */
   conv.data.fallbackCount = 0;
+
+  // Let's clean up the old data:
+  erase_storage_data(conv);
 
   /*
   const welcome_param = {}; // The dict which will hold our parameter data
@@ -1343,23 +1259,23 @@ app.intent('moreMovieInfo', (conv) => {
       let textToSpeech_prequel = `<speak>Here's more info on ${movie_title}! <break time="0.5s" /> ${movie_title}`;
       let textToDisplay_prequel = `Here's more info on ${movie_title}!\n\n`;
 
-      if (conv.contexts.get('vote_context').parameters['year'] != null) {
+      if (conv.contexts.get('vote_context').parameters['year'] !== null && conv.contexts.get('vote_context').parameters['year'] !== 'undefined') {
         textToSpeech_prequel += ` was released in the year ${conv.contexts.get('vote_context').parameters['year']},`
         textToDisplay_prequel += `Released in ${conv.contexts.get('vote_context').parameters['year']}.\n`;
       }
-      if (conv.contexts.get('vote_context').parameters['genres'] != null) {
+      if (conv.contexts.get('vote_context').parameters['genres'] !== null && conv.contexts.get('vote_context').parameters['genres'] !== 'undefined') {
         textToSpeech_prequel += ` it's an ${conv.contexts.get('vote_context').parameters['genres']} movie,`;
-        textToDisplay_prequel += `Genres: ${conv.contexts.get('vote_context').parameters['genres']}\n.`;
+        textToDisplay_prequel += `Genres: ${conv.contexts.get('vote_context').parameters['genres']}.\n`;
       }
-      if (conv.contexts.get('vote_context').parameters['directors'] != null) {
+      if (conv.contexts.get('vote_context').parameters['directors'] !== null && conv.contexts.get('vote_context').parameters['directors'] !== 'undefined') {
         textToSpeech_prequel += ` it was directed by ${conv.contexts.get('vote_context').parameters['directors']} and`;
         textToDisplay_prequel += `Director(s) ${conv.contexts.get('vote_context').parameters['directors']}.\n`;
       }
-      if (conv.contexts.get('vote_context').parameters['imdb_rating'] != null) {
+      if (conv.contexts.get('vote_context').parameters['imdb_rating'] !== null && conv.contexts.get('vote_context').parameters['imdb_rating'] !== 'undefined') {
         textToSpeech_prequel += ` it currently has an IMDB rating of ${conv.contexts.get('vote_context').parameters['imdb_rating']} out of 10. <break time="0.35s" /> `;
         textToDisplay_prequel += `IMDB rating: ${conv.contexts.get('vote_context').parameters['imdb_rating']}/10. \n`;
       }
-      if (conv.contexts.get('vote_context').parameters['actors'] != null) {
+      if (conv.contexts.get('vote_context').parameters['actors'] !== null && conv.contexts.get('vote_context').parameters['actors'] !== 'undefined') {
         textToSpeech_prequel += ` The cast of ${movie_title} is primarily comprised of ${conv.contexts.get('vote_context').parameters['actors']}. <break time="0.25s" /> `;
         textToDisplay_prequel += `Cast: ${conv.contexts.get('vote_context').parameters['actors']}.\n`;
       }
@@ -1492,7 +1408,7 @@ app.intent('goat', (conv, { movieGenre }) => {
                   movie_title = body.goat_movies[index].title; // non-limited movie title
                 }
 
-                if (index != (body.goat_movies.length - 1)) {
+                if (index !== (body.goat_movies.length - 1)) {
                   goat_text += `${current_rank}: "${movie_title}" (${body.goat_movies[index].year}) \n`;
                 } else {
                   goat_text += `${current_rank}: "${movie_title}" (${body.goat_movies[index].year})`;
@@ -1514,7 +1430,7 @@ app.intent('goat', (conv, { movieGenre }) => {
               })
               .then(goat_rows_list => {
                 //console.log(`goat rows 2: ${goat_rows_list}`);
-                if (movie_genres_comma_separated_string.length > 2) {
+                if (movie_genres_comma_separated_string.length > 2 && movie_genres_comma_separated_string !== "NONE") {
                   // The user provided genre parameters
                   // >2 because no movie genres is ` `
                   textToSpeech = `<speak>` +
@@ -1553,6 +1469,12 @@ app.intent('goat', (conv, { movieGenre }) => {
                   'goat', // input_intent
                   'Win' // win_or_fail
                 );
+                let subtitle;
+                if (movie_genres_comma_separated_string !== "NONE") {
+                  subtitle = `Greatest ${movie_genres_comma_separated_string} movies of all time!`;
+                } else {
+                  subtitle = `Greatest movies of all time!`;
+                }
 
                 conv.ask(
                   new SimpleResponse({
@@ -1561,7 +1483,7 @@ app.intent('goat', (conv, { movieGenre }) => {
                   }),
                   new Table({
                     title: 'GOAT Movies',
-                    subtitle: `Greatest ${movie_genres_comma_separated_string} movies of all time!`,
+                    subtitle: subtitle,
                     dividers: true,
                     columns: ['Title', 'IMDB Rating', 'GOAT Ranking'],
                     rows: goat_movies_list
@@ -1581,7 +1503,7 @@ app.intent('goat', (conv, { movieGenre }) => {
                 Best practice is to only present 3 list results, not 10.
                 We aught to provide some sort of paging to
               */
-              if (movie_genres_comma_separated_string != ``) { // TODO: Check if the function returns '' or ' '!
+              if (movie_genres_comma_separated_string !== `` && movie_genres_comma_separated_string !== 'NONE') { // TODO: Check if the function returns '' or ' '!
                 textToSpeech = `<speak>The 3 greatest ${movie_genres_comma_separated_string} movies of all time, as determined by our userbase are: <break time="0.35s" />`;
                 textToDisplay = `The 3 greatest ${movie_genres_comma_separated_string} movies of all time, as determined by our userbase are:`;
               } else {
@@ -1957,9 +1879,7 @@ app.intent('dislike.all.recommendations', (conv) => {
         };
 
         return hug_request('HUG', 'submit_movie_rating', 'POST', option)
-        .then(() => {
-          console.log(`mass downvote!`);
-        }) // END of the GET request!
+        .then(console.log(`mass downvote!`)) // END of the GET request!
         .catch(error_message => {
           return catch_error(conv, error_message, 'dislike_all_submit_movie_rating');
         });
@@ -2065,11 +1985,9 @@ app.intent('item.selected', (conv, input, option) => {
 
       let title_let = (movie_element.title).replace('&', 'and'); // & characters invalidate SSML
 
-      return parse_parameter_list(movie_element.genres, ', ')
-      .then(movie_genres_string => {
-        store_movie_data(conv, 'list_selection', movie_element.imdbID, movie_element.title, movie_element.plot, movie_element.year, movie_element.imdbRating, movie_genres_string);
+        store_movie_data(conv, 'list_selection', movie_element.imdbID, movie_element.title, movie_element.plot, movie_element.year, movie_element.imdbRating, movie_element.genres);
 
-        const genre_list = helpExtract(movie_element.genres);
+        const genre_list = movie_element.genres;
         const actor_list = helpExtract(movie_element.actors);
         const director_list = helpExtract(movie_element.director);
 
@@ -2077,7 +1995,7 @@ app.intent('item.selected', (conv, input, option) => {
 
         if (genre_list.length > 1) {
           textToSpeech += `"${title_let}" is an ${genre_list} movie, with a cast primarily comprised of ${actor_list}. <break time="0.35s" />`;
-        } else if (genre_list.length == 1) {
+        } else if (genre_list.length === 1) {
           textToSpeech += `"${title_let}" is an ${genre_list} movie, with a cast primarily comprised of ${actor_list}. <break time="0.35s" />`;
         } else {
           textToSpeech += `The cast of "${title_let}" is primarily comprised of ${actor_list}. <break time="0.35s" />`;
@@ -2128,7 +2046,6 @@ app.intent('item.selected', (conv, input, option) => {
             new Suggestions(`👍`, `👎`, `🎬 more movie info`, `🍿 Watch movie online`, '🗳 Rank Movies', `🐐 GOAT Movies`, '🏆 Show Stats', '💾 SIGIR demo')
           );
         }
-      });
     }) // END of the GET request!
     .catch(error_message => {
       return catch_error(conv, error_message, 'recommendation');
@@ -2342,6 +2259,9 @@ app.intent('goodbye', conv => {
     'Win' // win_or_fail
   );
 
+  // Let's clean up the old data:
+  erase_storage_data(conv);
+
   conv.close(
     new SimpleResponse({
       // Sending the details to the user
@@ -2394,7 +2314,7 @@ function where_to_watch_helper (conv) {
 
       if (conv.contexts.get('vote_context').parameters['mode'] === 'list_selection') {
         console.log(`DEBUG WATCH LIST SELECTION: ${conv.user.storage.last_intent_name}`);
-        if (conv.user.storage.last_intent_name == 'voted') {
+        if (conv.user.storage.last_intent_name === 'voted') {
           suggestions = ['🗳 Rank Movies', `🤔 recommend me a movie`, '💾 SIGIR demo', '🎥 SIGIR Movies', `🐐 GOAT Movies`, '🏆 Show Stats', '📑 Help'];
         } else {
           suggestions = [`👍`, `👎`, '🗳 Rank Movies',  '💾 SIGIR demo', '🎥 SIGIR Movies', `🐐 GOAT Movies`, '🏆 Show Stats', '📑 Help'];
@@ -2771,7 +2691,7 @@ app.intent('SIGIR_Movies', (conv, { movieGenre }) => {
                     movie_title = body.goat_movies[index].title; // non-limited movie title
                   }
 
-                  if (index != (body.goat_movies.length - 1)) {
+                  if (index !== (body.goat_movies.length - 1)) {
                     goat_text += `${current_rank}: "${movie_title}" (${body.goat_movies[index].year}) \n`;
                   } else {
                     goat_text += `${current_rank}: "${movie_title}" (${body.goat_movies[index].year})`;
@@ -2794,7 +2714,7 @@ app.intent('SIGIR_Movies', (conv, { movieGenre }) => {
                 })
                 .then(goat_rows_list => {
                   //console.log(`goat rows 2: ${goat_rows_list}`);
-                  if (movie_genres_comma_separated_string.length > 2) {
+                  if (movie_genres_comma_separated_string.length > 2 && movie_genres_comma_separated_string !== "NONE") {
                     // The user provided genre parameters
                     // >2 because no movie genres is ` `
                     textToSpeech = `<speak>` +
@@ -2847,7 +2767,7 @@ app.intent('SIGIR_Movies', (conv, { movieGenre }) => {
                   Best practice is to only present 3 list results, not 10.
                   We aught to provide some sort of paging to
                 */
-                if (movie_genres_comma_separated_string != ``) { // TODO: Check if the function returns '' or ' '!
+                if (movie_genres_comma_separated_string !== `` && movie_genres_comma_separated_string !== "NONE") { // TODO: Check if the function returns '' or ' '!
                   textToSpeech = `<speak>The 3 greatest ${movie_genres_comma_separated_string} movies of all time, as determined by SIGIR 2018 attendees are: <break time="0.35s" />`;
                   textToDisplay = `The 3 greatest ${movie_genres_comma_separated_string} movies of all time, as determined by SIGIR 2018 attendees are:`;
                 } else {
@@ -3255,7 +3175,7 @@ app.intent('repeat', conv => {
     }
   }
 
-  if ((textToSpeech != null) && (textToDisplay != null) && (suggestions != null) && (intent_name != null)) {
+  if ((textToSpeech !== null) && (textToDisplay !== null) && (suggestions !== null) && (intent_name !== null)) {
     // The required context data exists
     const repeat_responses = [
       `Sorry, I said`,

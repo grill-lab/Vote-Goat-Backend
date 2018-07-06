@@ -589,9 +589,12 @@ def get_random_movie_list(gg_id: hug.types.text, experiment_id: hug.types.number
 			else:
 				rnd_max_cap = movie_count
 
-			random_results = []
-			for movie in range(result_count):
-				random_results.append(list(db.movie.find({"$and": find_and_list}, {'_id': False}).sort(sort_target, sorting).limit(1).skip(randint(0, rnd_max_cap)))[0])
+			#random_results = []
+			#for movie in range(result_count):
+			#	random_results.append(list(db.movie.find({"$and": find_and_list}, {'_id': False}).sort(sort_target, sorting).limit(1).skip(randint(0, rnd_max_cap)))[0])
+
+			# NOTE: The above prove too slow!
+			random_results = list(db.movie.find({"$and": find_and_list}, {'_id': False}).sort(sort_target, sorting).limit(10).skip(randint(0, rnd_max_cap)))
 
 			random_results = sorted(random_results, key=operator.itemgetter('imdbVotes', 'imdbRating'), reverse=True) # Sort the list of dicts.
 
