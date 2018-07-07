@@ -170,37 +170,8 @@ function chatbase_analytics(conv, input_message, input_intent, win_or_fail) {
       })
     	.catch(err => {
         console.error(err);
-        reject("Failure");
+        reject(`Failure`);
       });
-    }
-  });
-}
-
-function forward_contexts (conv, intent_name, inbound_context_name, outbound_context_name) {
-  /*
-    A function for easily forwarding the contents of contexts!
-    Why? Helper intents help direct conversations & need to forwards the user to the corrent intended intent after error handling!
-    Which intents? Voting, Repeat, Carousel? Several -> Keep it general!
-  */
-
-  return new Promise((resolve, reject) => {
-    // Do async job
-    console.log(`forward_context pre triggered! ${conv.contexts.get(inbound_context_name).parameters}`);
-    if (typeof(conv.contexts.get(inbound_context_name)) !== "undefined") {
-      /*
-        The inbound context exists.
-        Let's forwards it on!
-      */
-      console.log(`Forwarded contexts! Inbound: '${inbound_context_name}', Outbound: '${outbound_context_name}. CONTENTS BEFORE: ${conv.contexts.get(inbound_context_name).parameters}'`);
-      conv.contexts.set(outbound_context_name, 1, conv.contexts.get(inbound_context_name).parameters);
-      console.log(`CONTENTS AFTERWARDS FORWARD: ${conv.contexts.get(outbound_context_name).parameters}`);
-      resolve('Success!');
-    } else {
-      /*
-        We tried to forward the contents of a context which did not exist.
-      */
-      console.error(`ERROR: Failed to forwards the inbound context named "${inbound_context_name}"`);
-      reject('Failure');
     }
   });
 }
@@ -526,14 +497,17 @@ function setup_experiment (conv, intent_name, movieGenreParameter) {
     This function will retrieve the latest experiment data for the current intent.
     We will roll the dice in here & decide which experiment we want to implement.
   */
+
+  /*
   const required_parameters = {
     //  HUG REST GET request parameters
     gg_id: parse_userId(conv), // Anonymous google id
     intent: intent_name,
     api_key: 'HUG_REST_API_KEY'
   };
-
-  return hug_request('HUG', 'get_experiment_values', 'GET', required_parameters)
+  */
+  //return hug_request('HUG', 'get_experiment_values', 'GET', required_parameters)
+  return hug_request('HUG', 'get_experiment_values', 'GET', {gg_id: parse_userId(conv), intent: intent_name, api_key: 'HUG_REST_API_KEY'})
   .then(body => {
     if (body.success === true && body.valid_key === true) {
       /*
@@ -692,7 +666,7 @@ function parse_userId (conv) {
     https://developers.google.com/actions/identity/user-info
   */
 
-  if ((conv.user.storage).hasOwnProperty('useridstorage')) {
+  if (((conv.user.storage).hasOwnProperty('useridstorage')) || (typeof(conv.data.fallbackCount) !== "undefined")) {
     /*
       The 'useridstorage' object exists, let's check its contents!
     */
@@ -789,20 +763,11 @@ function helpExtract(input_array) {
   return processed_list;
 }
 
-function genericFallback(conv, intent_name) {
+function fallback_body (conv, fallback_name) {
   /*
-  Generic fallback function
+    Reducing code duplication.
+    We don't check for the existence of
   */
-  //console.warn("GENERIC FALLBACK TRIGGERED!");
-  const fallback_name = intent_name + '_Fallback';
-
-  //console.log(util.inspect(conv, false, null)); // DEBUG function!
-
-  if (!(conv.data).hasOwnProperty('fallbackCount')) {
-    conv.data.fallbackcount = 0;
-  }
-
-  //console.log(`Generic fallback count: ${conv.data.fallbackCount}`);
   if (conv.data.fallbackCount >= 2) {
     // Google best practice is to quit upon the 3rd attempt
     console.log("User misunderstood 3 times, quitting!");
@@ -814,7 +779,6 @@ function genericFallback(conv, intent_name) {
     );
     return conv.close("Unfortunately, Vote Goat was unable to understand user input. Sorry for the inconvenience, let's try again later though? Goodbye.");
   } else {
-
     // Within fallback attempt limit (<3)
     const text_target = 'fallback_text_' + (conv.data.fallbackCount).toString();
     const speech_target = 'fallback_speech_' + (conv.data.fallbackCount).toString();
@@ -823,17 +787,20 @@ function genericFallback(conv, intent_name) {
     let fallback_text;
     let fallback_speech;
     let suggestions;
+
     if ((conv.data).hasOwnProperty(text_target)) {
       fallback_text = conv.data[text_target];
     } else {
       fallback_text = 'Sorry, what do you want to do next?';
     }
+
     if ((conv.data).hasOwnProperty(speech_target)) {
-      // There was
+      // The
       fallback_speech = conv.data[speech_target];
     } else {
       fallback_speech = '<speak>Sorry, what do you want to do next?</speak>'
     }
+
     if ((conv.data).hasOwnProperty('suggestions')) {
       // There were suggestions stored in conv data.
       suggestions = (conv.data.suggestions).split(', ');
@@ -869,6 +836,36 @@ function genericFallback(conv, intent_name) {
         })
       );
     }
+  }
+  // END
+}
+
+function genericFallback(conv, intent_name) {
+  /*
+  Generic fallback function
+  */
+  const fallback_name = intent_name + '_Fallback';
+
+  //console.log(util.inspect(conv, false, null)); // DEBUG function!
+
+  if ((!(conv.data).hasOwnProperty('fallbackCount')) || (typeof(conv.data.fallbackCount) === "undefined")) {
+    /*
+      The user's past conversation has expired - we need to handle unprepared fallbacks.
+      Both contexts and conv.data expire after a certain period of inactivity.
+    */
+    conv.data.fallbackCount = 0 // Set the fallback to 0, enabling genericFallback to work
+    conv.data.fallback_text_0 = "Sorry, what do you want to do next?";
+    conv.data.fallback_text_1 = "I didn't catch that. Do you want to rank movies, receive movie recommendations, view your leaderboard position or quit?";
+    conv.data.fallback_speech_0 = "<speak>Sorry, what do you want to do next?</speak>";
+    conv.data.fallback_speech_1 = "<speak>I didn't catch that. Do you want to rank movies, receive movie recommendations, view your leaderboard position or quit?</speak>";
+    conv.data.suggesions = ['🗳 Rank Movies', '🤔 Movie Recommendation', '🏆 Show Stats', '💾 SIGIR demo', '🎥 SIGIR Movies', `🐐 GOAT Movies`, '📑 Help', `🚪 Quit`];
+    return fallback_body(conv, fallback_name);
+  } else {
+    /*
+      The user has an ongoing conversation during this fallback.
+      We have the required data to proceed.
+    */
+    return fallback_body(conv, fallback_name);
   }
 }
 
@@ -1896,6 +1893,8 @@ app.intent('dislike.all.recommendations', (conv) => {
           movie_id: conv.contexts.get('list_body').parameters[string_iterator].imdbID, // Passing the movie ID acquired via context
           rating: 0, // The rating we're setting for the movie we just displayed to the user.
           mode: 'multi vote',
+          conv_id: conv.id,
+          raw_vote: (conv.input.raw).toString(),
           sigir: (conv.user.storage).hasOwnProperty('sigir') | 0,
           api_key: 'HUG_REST_API_KEY'
         };
@@ -2128,9 +2127,6 @@ app.intent('recommend_movie.fallback', (conv) => {
       /*
         Displaying carousel fallback & forwarding contexts in case of subsequent carousel fallbacks
       */
-      //forward_contexts(conv, 'carousel_fallback', 'recommendation_context', 'recommendation_context');
-      //forward_contexts(conv, 'carousel_fallback', 'list_body', 'list_body');
-
       const textToSpeech = `<speak>${CAROUSEL_FALLBACK_DATA[current_fallback_value]}</speak>`;
       const textToDisplay = CAROUSEL_FALLBACK_DATA[current_fallback_value];
 
@@ -2479,7 +2475,8 @@ function where_to_watch_helper (conv) {
     /*
     The 'vote_context' context is not present.
     */
-    return catch_error(conv, 'No "vote_context" detected!', 'moreMovieInfo');
+    return handle_no_contexts(conv, 'moreMovieInfo');
+    //return catch_error(conv, 'No "vote_context" detected!', 'moreMovieInfo');
   }
 }
 
@@ -2898,7 +2895,7 @@ app.intent('SIGIR_Movies', (conv, { movieGenre }) => {
   }
 });
 
-function handle_no_contexts (conv) {
+function handle_no_contexts (conv, source_name) {
   /*
   The purpose of this function is to handle situations where a context was required but not present within the user's device. This intent ideally is never called, but was triggered during development of v1 occasionally.
   */
@@ -2912,6 +2909,13 @@ function handle_no_contexts (conv) {
   const suggestions = ['🗳 Rank Movies', '🤔 Movie Recommendation', '💾 SIGIR demo', '🎥 SIGIR Movies', '🏆 Show Stats', `🐐 GOAT Movies`, '📑 Help', `🚪 Quit`];
 
   store_fallback_response(conv, fallback_messages, suggestions);
+
+  chatbase_analytics(
+    conv,
+    `HANDLED NO CONTEXTS`, // input_message
+    source_name, // input_intent
+    'Fail' // win_or_fail
+  );
 
   var textToSpeech;
   var textToDisplay;
@@ -3128,7 +3132,7 @@ app.intent('voted', (conv, { voting }) => {
               }
             } else {
               console.error('An error was encountered in upvote function');
-              return handle_no_contexts(conv);
+              return handle_no_contexts(conv, 'voted');
               //return catch_error(conv, 'No voting mode detected!', 'voting intent');
             }
           } else {
@@ -3137,7 +3141,8 @@ app.intent('voted', (conv, { voting }) => {
               TODO: Rather than prompt an error, attempt to recover voting_context from user.storage, or use handle_no_contexts function!
             */
             console.log('Voting intent error: No voting_context context present!');
-            return catch_error(conv, 'No voting mode detected!', 'voting intent');
+            return handle_no_contexts(conv, 'voted');
+            //return catch_error(conv, 'No voting mode detected!', 'voting intent');
           }
         } else {
           // This will only trigger if the API key changes.
@@ -3152,13 +3157,11 @@ app.intent('voted', (conv, { voting }) => {
     .catch(() => {
       // We didn't hear any valid input from the user!
       console.log("Invalid vote detected! Sent to fallback!");
-      //return catch_error(conv, 'ERROR: Vote is not valid?', 'voted'); // TODO: Redirect to fallback instead of catching error?
       return genericFallback(conv, `voted`);
     });
   } else {
     // No 'vote_cotext' context detected
-    //console.error(`CONV DATA: "${conv.data.voting_mode}",  "${conv.data.voting_movieID}", "${conv.data.voting_movieTitle}",  "${conv.data.voting_moviePlot}", "${conv.data.voting_movieYear}" #### USER STORAGE:  "${conv.user.storage.voting_mode}", "${conv.user.storage.voting_movieID}", "${conv.user.storage.voting_movieTitle}",  "${conv.user.storage.voting_moviePlot}",  "${conv.user.storage.voting_movieYear}"`);
-    return catch_error(conv, 'No voting context detected!', 'moreMovieInfo');
+    return handle_no_contexts(conv, 'voted');
   }
 });
 
@@ -3171,75 +3174,86 @@ app.intent('repeat', conv => {
     https://developers.google.com/actions/assistant/best-practices#let_users_replay_information
   */
 
-  const textToSpeech = conv.data.last_intent_prompt_speech; // The last speech bubble
-  const textToDisplay = conv.data.last_intent_prompt_text; // The last text displayed
-  const intent_name = conv.data.last_intent_name; // The last intent the user was at
-  const suggestions = conv.data.suggestions;
-
-  if (intent_name === 'recommendMovie') {
-    // Rather than confuse things, let's just send the use onwards to the movie recommendation fallback.
-    chatbase_analytics(conv, `User requested repeat!`, `repeat.carousel`, 'Fail');
-    return genericFallback(conv, 'ItemSelected.fallback');
-  }
-
-  if (typeof(conv.data.fallbackCount) === "undefined") {
-    // The fallback counter didn't exist
-    conv.data.fallbackCount = 0
+  if ((!(conv.data).hasOwnProperty('last_intent_name')) || (typeof(conv.data.last_intent_name) === "undefined") || (typeof(conv.data.last_intent_prompt_speech) === "undefined") || (typeof(conv.data.last_intent_prompt_text) === "undefined")) {
+    /*
+      The user has requested that we repeat ourselves, but their last conversation has expired.
+      Let's redirect them to the handle_no_contexts function.
+    */
+    return handle_no_contexts(conv, 'repeat');
   } else {
-    // The fallback counter exists
-    const temp_count = conv.data.fallbackCount;
-    if (temp_count >= 2) {
-      // Quit like normal fallbacks
-      conv.close(`Sorry that I couldn't articulate myself, try again later!`);
+    /*
+      We've got an ongoing conversation & conv data to work with.
+      Let's repeat what we just said! 👍
+    */
+    const textToSpeech = conv.data.last_intent_prompt_speech; // The last speech bubble
+    const textToDisplay = conv.data.last_intent_prompt_text; // The last text displayed
+    const intent_name = conv.data.last_intent_name; // The last intent the user was at
+    const suggestions = conv.data.suggestions;
+
+    if (intent_name === 'recommendMovie') {
+      // Rather than confuse things, let's just send the use onwards to the movie recommendation fallback.
+      chatbase_analytics(conv, `User requested repeat!`, `repeat.carousel`, 'Fail');
+      return genericFallback(conv, 'ItemSelected.fallback');
+    }
+
+    if (typeof(conv.data.fallbackCount) === "undefined") {
+      // The fallback counter didn't exist
+      conv.data.fallbackCount = 0;
     } else {
-      // Iterate & move on
-      conv.data.fallbackCount = temp_count + 1;
+      // The fallback counter exists
+      const temp_count = conv.data.fallbackCount;
+      if (temp_count >= 2) {
+        // Quit like normal fallbacks
+        conv.close(`Sorry that I couldn't articulate myself, try again later!`);
+      } else {
+        // Iterate & move on
+        conv.data.fallbackCount = temp_count + 1;
+      }
     }
-  }
 
-  if ((textToSpeech !== null) && (textToDisplay !== null) && (suggestions !== null) && (intent_name !== null)) {
-    // The required context data exists
-    const repeat_responses = [
-      `Sorry, I said`,
-      `Let me repeat that`,
-      `No worries, i'll repeat myself.`,
-      `Sure, I said`,
-      `I'll repeat that`
-    ];
+    if ((textToSpeech !== null) && (textToDisplay !== null) && (suggestions !== null) && (intent_name !== null)) {
+      // The required context data exists
+      const repeat_responses = [
+        `Sorry, I said`,
+        `Let me repeat that`,
+        `No worries, i'll repeat myself.`,
+        `Sure, I said`,
+        `I'll repeat that`
+      ];
 
-    const chosen_repeat_response = repeat_responses[Math.floor(Math.random() * repeat_responses.length)];
+      const chosen_repeat_response = repeat_responses[Math.floor(Math.random() * repeat_responses.length)];
 
-    conv.ask(
-      // We don't need anything other than simple response, as screen devices can simply scroll up to see past content.
-      new SimpleResponse({
-        // Sending the details to the user
-        speech: `<speak>${chosen_repeat_response}</speak>`,
-        text: chosen_repeat_response
-      })
-    );
-
-    if (conv.surface.capabilities.has('actions.capability.SCREEN_OUTPUT')) {
       conv.ask(
-        new Suggestions(suggestions.split(','))
+        // We don't need anything other than simple response, as screen devices can simply scroll up to see past content.
+        new SimpleResponse({
+          // Sending the details to the user
+          speech: `<speak>${chosen_repeat_response}</speak>`,
+          text: chosen_repeat_response
+        })
       );
+
+      if (conv.surface.capabilities.has('actions.capability.SCREEN_OUTPUT')) {
+        conv.ask(
+          new Suggestions(suggestions.split(','))
+        );
+      }
+
+      conv.ask(
+        // We don't need anything other than simple response, as screen devices can simply scroll up to see past content.
+        new SimpleResponse({
+          // Sending the details to the user
+          speech: textToSpeech,
+          text: textToDisplay
+        })
+      );
+
+      chatbase_analytics(conv, `User requested repeat!`, `repeat`, 'Win');
+    } else {
+      // Failed to repeat response
+      return catch_error(conv, 'No stored repeat response!', 'Repeat_Error');
     }
-
-    conv.ask(
-      // We don't need anything other than simple response, as screen devices can simply scroll up to see past content.
-      new SimpleResponse({
-        // Sending the details to the user
-        speech: textToSpeech,
-        text: textToDisplay
-      })
-    );
-
-    chatbase_analytics(conv, `User requested repeat!`, `repeat.carousel`, 'Win');
-  } else {
-    // Failed to repeat response
-    return catch_error(conv, 'No stored repeat response!', 'Repeat_Error');
   }
 });
-
 
 //////////// Fallback Intents
 
@@ -3300,15 +3314,6 @@ app.intent('input.unknown', conv => {
   /*
   Generic fallback intent used by all intents!
   */
-
-  /*
-  if ((conv.data).hasOwnProperty('fallbackCount')) {
-    console.log(`FALLBACKCOUNT DEBUG: NOPE! ${(conv.data).hasOwnProperty('fallbackCount')}`);
-  } else {
-    console.log(`FALLBACKCOUNT DEBUG: NOPE! ${(conv.data).hasOwnProperty('fallbackCount')}`);
-  }
-  */
-
   chatbase_analytics(
     conv,
     `Handled user fallback prompt!`, // input_message
@@ -3316,35 +3321,8 @@ app.intent('input.unknown', conv => {
     'Fail' // win_or_fail
   );
 
-  return genericFallback(conv, `bot.fallback`);
+  return genericFallback(conv, `input.unknown`);
 });
-
-/*
-if (typeof(conv.data.fallbackCount) === "undefined") {
-  //The user has not matched any intents & their past conversation has expired - they're continuing the previous conversation's dialog.
-  //Both contexts and conv.data expire after a certain period of inactivity.
-
-  conv.data.fallbackCount = 0 // Set the fallback to 0, enabling genericFallback to work
-
-  if (conv.user.storage.last_intent_name === "Training") {
-    var movieGenre;
-
-    if (typeof(conv.user.storage.movieGenre) === "undefined") {
-      movieGenre = [];
-    } else {
-      movieGenre = (conv.user.storage.movieGenre).split(' ');
-    }
-
-    return get_single_unrated_movie(conv, movieGenre);
-  }
-
-  conv.data.fallback_text_0 = "Sorry, what do you want to do next?";
-  conv.data.fallback_text_1 = "I didn't catch that. Do you want to rank movies, receive movie recommendations, view your leaderboard position or discover the GOAT movies?";
-  conv.data.fallback_speech_0 = "<speak>Sorry, what do you want to do next?</speak>";
-  conv.data.fallback_speech_1 = "<speak>I didn't catch that. Do you want to rank movies, receive movie recommendations, view your leaderboard position or discover the GOAT movies?</speak>";
-  conv.data.suggesions = ['🗳 Rank Movies', '🤔 Movie Recommendation', '🏆 Show Stats', `🚪 Quit`];
-}
-*/
 
 app.catch((conv, error_message) => {
   /*
