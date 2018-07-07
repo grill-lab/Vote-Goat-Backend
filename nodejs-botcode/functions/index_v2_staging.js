@@ -576,7 +576,7 @@ function setup_experiment (conv, intent_name, movieGenreParameter) {
                                             'experiment_id': body.experiment_details.experiment_id,
                                             'experiment_group': 0
                                           },
-                                          required_parameters,
+                                          {gg_id: parse_userId(conv), intent: intent_name, api_key: 'HUG_REST_API_KEY'},
                                           body.experiment_details.target_hug_parameters["0"]
                                         ),
                 'target_hug_function': body.experiment_details.target_hug_function["0"],
@@ -599,7 +599,7 @@ function setup_experiment (conv, intent_name, movieGenreParameter) {
                                             'experiment_id': body.experiment_details.experiment_id,
                                             'experiment_group': 1
                                           },
-                                          required_parameters,
+                                          {gg_id: parse_userId(conv), intent: intent_name, api_key: 'HUG_REST_API_KEY'},
                                           body.experiment_details.target_hug_parameters["1"]
                                         ),
                 'target_hug_function': body.experiment_details.target_hug_function["1"],
@@ -1880,83 +1880,81 @@ app.intent('dislike.all.recommendations', (conv) => {
       iterator_max = 2;
     }
 
-    for (let iterator = 0; iterator < 10; iterator++) { // Iterating over the top k body results!
+    let movie_list = [];
 
-      if (iterator > iterator_max) {
-        break; // Greater than 9 is invalid.
-      } else {
-        let string_iterator = iterator.toString();
-
-        const option = {
-          //  HUG REST GET request parameters
-          gg_id: parse_userId(conv), // Anonymous google id
-          movie_id: conv.contexts.get('list_body').parameters[string_iterator].imdbID, // Passing the movie ID acquired via context
-          rating: 0, // The rating we're setting for the movie we just displayed to the user.
-          mode: 'multi vote',
-          conv_id: conv.id,
-          raw_vote: (conv.input.raw).toString(),
-          sigir: (conv.user.storage).hasOwnProperty('sigir') | 0,
-          api_key: 'HUG_REST_API_KEY'
-        };
-
-        return hug_request('HUG', 'submit_movie_rating', 'POST', option)
-        .then(console.log(`mass downvote!`)) // END of the GET request!
-        .catch(error_message => {
-          return catch_error(conv, error_message, 'dislike_all_submit_movie_rating');
-        });
-      }
-    } // End of loop
+    for (let iterator = 0; iterator < iterator_max; iterator++) {
+      // Iterating over the top k body results!
+      let string_iterator = iterator.toString();
+      let movie_id = conv.contexts.get('list_body').parameters[string_iterator].imdbID;
+      movie_list.push(movie_id);
+    }
 
     let textToSpeech;
     let textToDisplay;
 
-    if (conv.surface.capabilities.has('actions.capability.SCREEN_OUTPUT')) {
-      // Device has a screen
-      textToSpeech = `<speak>` +
-        `Sorry for providing poor movie recommendations. <break time="0.25s" /> ` +
-        `Please try ranking more movies to improve future recommendations. <break time="0.5s" /> ` +
-        `What do you want to do next? Rank movies, view your stats, get help or quit?` +
-        `</speak>`;
-      textToDisplay = `Sorry for providing poor movie recommendations. \n\n` +
-        `Please try ranking more movies to improve future recommendations. \n\n` +
-        `What do you want to do next? Rank movies, view your stats, get help or quit?`;
-    } else {
-      // Device is speaker only
-      textToSpeech = `<speak>` +
-        `Sorry for providing poor movie recommendations. <break time="0.25s" /> ` +
-        `Please try ranking more movies to improve future recommendations. <break time="0.5s" /> ` +
-        `What do you want to do next? Rank movies, view your stats, get help or quit?` +
-        `</speak>`;
-      textToDisplay = `Sorry for providing poor movie recommendations.` +
-        `Please try ranking more movies to improve future recommendations.` +
-        `What do you want to do next? Rank movies, view your stats or quit?`;
-    }
+    const option = {
+      gg_id: parse_userId(conv), // Anonymous google id
+      movie_ids: movie_list.join(','),
+      conv_id: conv.id,
+      raw_vote: (conv.input.raw).toString(),
+      sigir: (conv.user.storage).hasOwnProperty('sigir') | 0,
+      api_key: 'HUG_REST_API_KEY'
+    };
 
-    store_repeat_response(conv, 'dislikeRecommendations', textToSpeech, textToDisplay); // Storing repeat info
+    return hug_request('HUG', 'downvote_many_movies', 'POST', option)
+    .then(() => {
+      if (conv.surface.capabilities.has('actions.capability.SCREEN_OUTPUT')) {
+        // Device has a screen
+        textToSpeech = `<speak>` +
+          `Sorry for providing poor movie recommendations. <break time="0.25s" /> ` +
+          `Please try ranking more movies to improve future recommendations. <break time="0.5s" /> ` +
+          `What do you want to do next? Rank movies, view your stats, get help or quit?` +
+          `</speak>`;
+        textToDisplay = `Sorry for providing poor movie recommendations. \n\n` +
+          `Please try ranking more movies to improve future recommendations. \n\n` +
+          `What do you want to do next? Rank movies, view your stats, get help or quit?`;
+      } else {
+        // Device is speaker only
+        textToSpeech = `<speak>` +
+          `Sorry for providing poor movie recommendations. <break time="0.25s" /> ` +
+          `Please try ranking more movies to improve future recommendations. <break time="0.5s" /> ` +
+          `What do you want to do next? Rank movies, view your stats, get help or quit?` +
+          `</speak>`;
+        textToDisplay = `Sorry for providing poor movie recommendations.` +
+          `Please try ranking more movies to improve future recommendations.` +
+          `What do you want to do next? Rank movies, view your stats or quit?`;
+      }
 
-    chatbase_analytics(
-      conv,
-      `User downvoted all recommended movies!`, // input_message
-      'dislike.all.recommendations', // input_intent
-      'Fail' // win_or_fail
-    );
+      store_repeat_response(conv, 'dislikeRecommendations', textToSpeech, textToDisplay); // Storing repeat info
 
-    conv.ask(
-      new SimpleResponse({
-        // Sending the details to the user
-        speech: textToSpeech,
-        text: textToDisplay
-      })
-    );
-
-    if (conv.surface.capabilities.has('actions.capability.SCREEN_OUTPUT')) {
-      conv.ask(
-        new Suggestions('🗳 Rank Movies', '🤔 Movie Recommendation',  '💾 SIGIR demo', '🎥 SIGIR Movies', `🐐 GOAT Movies`, '🏆 Show Stats', '📑 Help', `🚪 Quit`)
+      chatbase_analytics(
+        conv,
+        `User downvoted all recommended movies!`, // input_message
+        'dislike.all.recommendations', // input_intent
+        'Fail' // win_or_fail
       );
-    }
+
+      conv.ask(
+        new SimpleResponse({
+          // Sending the details to the user
+          speech: textToSpeech,
+          text: textToDisplay
+        })
+      );
+
+      if (conv.surface.capabilities.has('actions.capability.SCREEN_OUTPUT')) {
+        conv.ask(
+          new Suggestions('🗳 Rank Movies', '🤔 Movie Recommendation',  '💾 SIGIR demo', '🎥 SIGIR Movies', `🐐 GOAT Movies`, '🏆 Show Stats', '📑 Help', `🚪 Quit`)
+        );
+      }
+    })
+    .catch(error_message => {
+      return catch_error(conv, error_message, 'dislike_all_submit_movie_rating');
+    });
   } else {
     // This shouldn't trigger, but better safer than sorry!
-    return catch_error(conv, 'No voting contexts !', 'voted');
+    //return catch_error(conv, 'No voting contexts !', 'voted');
+    return handle_no_contexts(conv, 'dislike.all.movies');
   }
 });
 
@@ -2073,7 +2071,7 @@ app.intent('item.selected', (conv, input, option) => {
     });
   } else {
     // Shouldn't happen, but better safe than sorry!
-    return catch_error(conv, 'No "list_body" context detected!', 'itemSelected');
+    return handle_no_contexts(conv, 'itemSelected');
   }
 }); // end of itemSelected function!
 
@@ -2159,7 +2157,7 @@ app.intent('recommend_movie.fallback', (conv) => {
       Somehow the user triggered the carousel fallback without having the carousel contexts.
      Shouldn't occur, but better safe than sorry!
     */
-    return catch_error(conv, 'No "list_body" context detected!', 'itemSelected');
+    return handle_no_contexts(conv, 'recommended_movie_fallback');
   }
 });
 
@@ -3250,7 +3248,8 @@ app.intent('repeat', conv => {
       chatbase_analytics(conv, `User requested repeat!`, `repeat`, 'Win');
     } else {
       // Failed to repeat response
-      return catch_error(conv, 'No stored repeat response!', 'Repeat_Error');
+      return handle_no_contexts(conv, 'itemSelected');
+      //return catch_error(conv, 'No stored repeat response!', 'Repeat_Error');
     }
   }
 });

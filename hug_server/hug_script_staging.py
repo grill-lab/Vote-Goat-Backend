@@ -183,9 +183,11 @@ def submit_movie_rating(gg_id: hug.types.text, movie_id: hug.types.text, rating:
 
 				if (mode == 'list_selection'):
 					# User is in the recommendation section & they just voted!
-					latest_usr_rec_ts = list(db.recommendation_history.find({"userId": user_id}).sort('k_mov_timestamp', -1).limit(1))[0]['k_mov_timestamp'] # Getting the user's last recommendation session timestamp
-					print("Movie rating timestamp DEBUG: {}".format(latest_usr_rec_ts))
-					db.recommendation_history.update_one({"userId": user_id, "k_mov_timestamp": latest_usr_rec_ts}, {"$set": {"voted": rating}}) # Recording the user's vote within the recommendation section
+					recommendation_exist_check = db.recommendation_history.find({"userId": user_id}).count()
+					if (recommendation_exist_check > 0):
+						latest_usr_rec_ts = list(db.recommendation_history.find({"userId": user_id}).sort('k_mov_timestamp', -1).limit(1))[0]['k_mov_timestamp'] # Getting the user's last recommendation session timestamp
+						#print("Movie rating timestamp DEBUG: {}".format(latest_usr_rec_ts))
+						db.recommendation_history.update_one({"userId": user_id, "k_mov_timestamp": latest_usr_rec_ts}, {"$set": {"voted": rating}}) # Recording the user's vote within the recommendation section
 
 				currentTime = pendulum.now() # Getting the time (SIGIR)
 				current_time = int(round(currentTime.timestamp())) # Converting to timestamp (SIGIR)
@@ -193,8 +195,6 @@ def submit_movie_rating(gg_id: hug.types.text, movie_id: hug.types.text, rating:
 				if (result == 0):	# User hasn't rated thisl movie yet.
 					movie_genres = list(db.movie.find({"imdbID": movie_id}))[0]['genre'] # Including the movie genres in the user ratings for ML movie recommendations
 					db.user_ratings.insert_one({"userId": user_id, "imdbID": movie_id, "rating": rating, "genres": movie_genres, "timestamp": current_time, "conversation_id": conv_id, "raw_vote": raw_vote})
-
-					user_genre_tally_data = db.user_genre_vote_tally.find({"userId": user_id})
 
 					if (rating == 1):
 						db.Users.update_one({"userId": user_id, "gg_id": gg_id}, {"$inc": {"total_movie_votes": 1, "total_movie_upvotes": 1}}) # Updating the user's voting stats
@@ -225,8 +225,6 @@ def submit_movie_rating(gg_id: hug.types.text, movie_id: hug.types.text, rating:
 
 								target = str(genre)+'.'+direction
 								inc_object[target] = int(1)
-
-						print(inc_object)
 
 						db.user_genre_vote_tally.update_one({"userId": user_id}, {"$inc": inc_object})
 
@@ -507,24 +505,24 @@ def downvote_many_movies(gg_id: hug.types.text, movie_ids: hug.types.multiple, c
 		user_id = get_user_id_by_gg_id(gg_id) # Convert gg_id to their incremental user_ratings userID.
 		if user_id is not None:
 			counter = 0
+			currentTime = pendulum.now() # Getting the time (SIGIR)
+			current_time = int(round(currentTime.timestamp())) # Converting to timestamp (SIGIR)
+
       		for movie_id in movie_ids:
 				# Iterating over the multiple movie ids
 				if (db.movie.find({"imdbID": movie_id}).count() > 0):
 					result = db.user_ratings.find({"$and": [{"userId": user_id}, {"imdbID": movie_id}]}).count() # Has the user voted on this movie?
 
-					latest_usr_rec_ts = list(db.recommendation_history.find({"userId": user_id}).sort('k_mov_timestamp', -1).limit(1))[0]['k_mov_timestamp'] # Getting the user's last recommendation session timestamp
-					db.recommendation_history.update_one({"userId": user_id, "k_mov_timestamp": latest_usr_rec_ts}, {"$set": {"voted": rating}}) # Recording the user's vote within the recommendation section
+					recommendation_exist_check = db.recommendation_history.find({"userId": user_id}).count()
+					if (recommendation_exist_check > 0):
+						# Check that a recommendation history item exists before attempting to update it
+						latest_usr_rec_ts = list(db.recommendation_history.find({"userId": user_id}).sort('k_mov_timestamp', -1).limit(1))[0]['k_mov_timestamp'] # Getting the user's last recommendation session timestamp
+						db.recommendation_history.update_one({"userId": user_id, "k_mov_timestamp": latest_usr_rec_ts}, {"$set": {"voted": rating}}) # Recording the user's vote within the recommendation section
 
 					if (result == 0):	# User hasn't rated this movie yet.
 						movie_genres = list(db.movie.find({"imdbID": movie_id}))[0]['genre'] # Including the movie genres in the user ratings for ML movie recommendations
 						db.user_ratings.insert_one({"userId": user_id, "imdbID": movie_id, "rating": 0, "genres": movie_genres, "timestamp": current_time, "conversation_id": conv_id, "raw_vote": raw_vote})
-
-						user_genre_tally_data = db.user_genre_vote_tally.find({"userId": user_id})
-
 						db.Users.update_one({"userId": user_id, "gg_id": gg_id}, {"$inc": {"total_movie_votes": 1, "total_movie_downvotes": 1}}) # Updating the user's voting stats
-
-						currentTime = pendulum.now() # Getting the time (SIGIR)
-						current_time = int(round(currentTime.timestamp())) # Converting to timestamp (SIGIR)
 
 						if (current_time >= 1531033200) and (current_time < 1531479600) and (sigir == 1):
 							# SIGIR attendee
