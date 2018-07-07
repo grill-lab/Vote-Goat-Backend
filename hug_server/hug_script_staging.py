@@ -498,6 +498,82 @@ def get_single_training_movie(gg_id: hug.types.text, sort_target: hug.types.text
 
 ##################
 
+@hug.post(examples='gg_id=anonymous_google_id&movie_ids=tt000001,tt000002&conv_id=12345&raw_vote=RAW_VOTE&sigir=0&api_key=API_KEY')
+@hug.get(examples='gg_id=anonymous_google_id&movie_ids=tt000001,tt000002&conv_id=12345&raw_vote=RAW_VOTE&sigir=0&api_key=API_KEY')
+def downvote_many_movies(gg_id: hug.types.text, movie_ids: hug.types.multiple, conv_id: hug.types.number, raw_vote: hug.types.text, sigir: hug.types.number, request, api_key: hug.types.text, hug_timer=5):
+	"""Downvoting multiple movies at a time."""
+	if (check_api_token(api_key) == True):
+		# API KEY VALID
+		user_id = get_user_id_by_gg_id(gg_id) # Convert gg_id to their incremental user_ratings userID.
+		if user_id is not None:
+			counter = 0
+      		for movie_id in movie_ids:
+				# Iterating over the multiple movie ids
+				if (db.movie.find({"imdbID": movie_id}).count() > 0):
+					result = db.user_ratings.find({"$and": [{"userId": user_id}, {"imdbID": movie_id}]}).count() # Has the user voted on this movie?
+
+					latest_usr_rec_ts = list(db.recommendation_history.find({"userId": user_id}).sort('k_mov_timestamp', -1).limit(1))[0]['k_mov_timestamp'] # Getting the user's last recommendation session timestamp
+					db.recommendation_history.update_one({"userId": user_id, "k_mov_timestamp": latest_usr_rec_ts}, {"$set": {"voted": rating}}) # Recording the user's vote within the recommendation section
+
+					if (result == 0):	# User hasn't rated this movie yet.
+						movie_genres = list(db.movie.find({"imdbID": movie_id}))[0]['genre'] # Including the movie genres in the user ratings for ML movie recommendations
+						db.user_ratings.insert_one({"userId": user_id, "imdbID": movie_id, "rating": 0, "genres": movie_genres, "timestamp": current_time, "conversation_id": conv_id, "raw_vote": raw_vote})
+
+						user_genre_tally_data = db.user_genre_vote_tally.find({"userId": user_id})
+
+						db.Users.update_one({"userId": user_id, "gg_id": gg_id}, {"$inc": {"total_movie_votes": 1, "total_movie_downvotes": 1}}) # Updating the user's voting stats
+
+						currentTime = pendulum.now() # Getting the time (SIGIR)
+						current_time = int(round(currentTime.timestamp())) # Converting to timestamp (SIGIR)
+
+						if (current_time >= 1531033200) and (current_time < 1531479600) and (sigir == 1):
+							# SIGIR attendee
+							db.movie.update_one({"imdbID": movie_id}, {"$inc": {"goat_downvotes": 1, "sigir_downvotes": 1, "total_goat_votes": 1, "total_sigir_votes": 1}}) # Updating the movie's voting stats
+						else:
+							# Normal user
+							db.movie.update_one({"imdbID": movie_id}, {"$inc": {"goat_downvotes": 1, "total_goat_votes": 1}}) # Updating the movie's voting stats
+
+						inc_object = {}
+
+						for genre in movie_genres: # Tallying genre voting data
+							target = str(genre)+'.down'
+							inc_object[target] = int(1)
+
+						google_analytics(request, 'mass_downvoted_unranked_movie')
+						db.user_genre_vote_tally.update_one({"userId": user_id}, {"$inc": inc_object})
+						counter += 1
+					else:
+						# Overwrite rating entry using update_one & $set
+						db.user_ratings.update_one({"userId": user_id, "imdbID": movie_id}, {"$set": {"rating": rating, "timestamp": current_time}})
+						google_analytics(request, 'mass_downvoted_ranked_movie')
+						counter += 1
+				else:
+					# There's no movie matching the imdbID
+					google_analytics(request, 'submit_movie_rating_imdbId_error')
+					#print("imdbID '" + str(movie_id) + "' does not exist!")
+			return {'success': True,
+					'quantity_movies_input': len(movie_ids),
+					'successful_votes': counter,
+					'error_message': '',
+					'valid_key': True,
+					'took': float(hug_timer)}
+		else:
+			# No gg_id found
+			google_analytics(request, 'submit_movie_rating_id_error')
+			return {'success': False,
+					'error_message': 'Invalid user Id',
+					'valid_key': True,
+					'took': float(hug_timer)}
+	else:
+		# API KEY INVALID!
+		google_analytics(request, 'submit_movie_rating_apikey_error')
+		return {'success': False,
+				'valid_key': False,
+				'took': float(hug_timer)}
+
+
+##################
+
 @hug.post(examples='gg_id=anonymous_google_id&k_mov_ts=12345.123&clicked_movie=tt000001&api_key=API_KEY')
 @hug.get(examples='gg_id=anonymous_google_id&k_mov_ts=12345.123&clicked_movie=tt000001&api_key=API_KEY')
 def log_clicked_item(gg_id: hug.types.text, k_mov_ts: hug.types.number, clicked_movie: hug.types.text, api_key: hug.types.text, request, hug_timer=5):
