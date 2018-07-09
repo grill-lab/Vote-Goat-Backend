@@ -399,23 +399,24 @@ def no_movies(request, hug_timer):
 			'valid_key': True,
 			'took': float(hug_timer)}
 
-def process_genres(genres):
+def process_multiple(input_multiple):
 	"""
-	To process genre parameter - replacing %2C for ","
+	To process multiple parameter - replacing %2C for ","
+	Might as well be using the text type.. perhaps we're not using the multiple type correctly?
 	"""
-	processed_genres = []
-	for genre in genres:
-		if ('%2C' in genre):
-			for individual_genre in genre.split("%2C"):
-				processed_genres.append(individual_genre)
+	processed_strings = []
+	for multiple in input_multiple:
+		if ('%2C' in multiple):
+			for individual_string in multiple.split("%2C"):
+				processed_strings.append(individual_string)
 			continue
-		if (',' in genre):
-			for individual_genre in genre.split(","):
-				processed_genres.append(individual_genre)
+		if (',' in multiple):
+			for individual_string in multiple.split(","):
+				processed_strings.append(individual_string)
 			continue
 		else:
-			processed_genres.append(genre)
-	return processed_genres
+			processed_strings.append(multiple)
+	return processed_strings
 
 @hug.get(examples='gg_id=anonymous_google_id&sort_target=imdbVotes&sort_direction=DESCENDING&target_min_value=50&genres=Horror,Drama&api_key=API_KEY')
 def get_single_training_movie(gg_id: hug.types.text, sort_target: hug.types.text, sort_direction: hug.types.text, target_min_value: hug.types.number, genres: hug.types.multiple, api_key: hug.types.text, request, hug_timer=20):
@@ -459,7 +460,7 @@ def get_single_training_movie(gg_id: hug.types.text, sort_target: hug.types.text
 
 			if ((genres != []) and (genres != ["NONE"])):
 				# The user has provided genre parameter data
-				genres = process_genres(genres)
+				genres = process_multiple(genres)
 				if (len(genres) > 1):
 					# Multiple genres!
 					find_and_list.append({"genre": {'$all': genres}})
@@ -504,9 +505,19 @@ def downvote_many_movies(gg_id: hug.types.text, movie_ids: hug.types.multiple, c
 		# API KEY VALID
 		user_id = get_user_id_by_gg_id(gg_id) # Convert gg_id to their incremental user_ratings userID.
 		if user_id is not None:
-			counter = 0
 			currentTime = pendulum.now() # Getting the time (SIGIR)
 			current_time = int(round(currentTime.timestamp())) # Converting to timestamp (SIGIR)
+
+			if ((movie_ids != []) and (movie_ids != ["NONE"])):
+				# The user has provided genre parameter data
+				movie_ids = process_multiple(movie_ids)
+			else:
+				# There should be movie ids for us to downvote..
+				google_analytics(request, 'submit_movie_rating_movie_id_error')
+				return {'success': False,
+						'error_message': 'Invalid movie ids',
+						'valid_key': True,
+						'took': float(hug_timer)}
 
       		for movie_id in movie_ids:
 				# Iterating over the multiple movie ids
@@ -517,7 +528,7 @@ def downvote_many_movies(gg_id: hug.types.text, movie_ids: hug.types.multiple, c
 					if (recommendation_exist_check > 0):
 						# Check that a recommendation history item exists before attempting to update it
 						latest_usr_rec_ts = list(db.recommendation_history.find({"userId": user_id}).sort('k_mov_timestamp', -1).limit(1))[0]['k_mov_timestamp'] # Getting the user's last recommendation session timestamp
-						db.recommendation_history.update_one({"userId": user_id, "k_mov_timestamp": latest_usr_rec_ts}, {"$set": {"voted": rating}}) # Recording the user's vote within the recommendation section
+						db.recommendation_history.update_one({"userId": user_id, "k_mov_timestamp": latest_usr_rec_ts}, {"$set": {"voted": 0}}) # Recording the user's vote within the recommendation section
 
 					if (result == 0):	# User hasn't rated this movie yet.
 						movie_genres = list(db.movie.find({"imdbID": movie_id}))[0]['genre'] # Including the movie genres in the user ratings for ML movie recommendations
@@ -539,19 +550,17 @@ def downvote_many_movies(gg_id: hug.types.text, movie_ids: hug.types.multiple, c
 
 						google_analytics(request, 'mass_downvoted_unranked_movie')
 						db.user_genre_vote_tally.update_one({"userId": user_id}, {"$inc": inc_object})
-						counter += 1
 					else:
 						# Overwrite rating entry using update_one & $set
-						db.user_ratings.update_one({"userId": user_id, "imdbID": movie_id}, {"$set": {"rating": rating, "timestamp": current_time}})
+						db.user_ratings.update_one({"userId": user_id, "imdbID": movie_id}, {"$set": {"rating": 0, "timestamp": current_time}})
 						google_analytics(request, 'mass_downvoted_ranked_movie')
-						counter += 1
 				else:
 					# There's no movie matching the imdbID
 					google_analytics(request, 'submit_movie_rating_imdbId_error')
 					#print("imdbID '" + str(movie_id) + "' does not exist!")
 			return {'success': True,
+					'movie_ids': movie_ids,
 					'quantity_movies_input': len(movie_ids),
-					'successful_votes': counter,
 					'error_message': '',
 					'valid_key': True,
 					'took': float(hug_timer)}
@@ -636,7 +645,7 @@ def get_random_movie_list(gg_id: hug.types.text, experiment_id: hug.types.number
 
 			if ((genres != []) and (genres != ["NONE"])):
 				# The user has provided genre parameter data
-				genres = process_genres(genres)
+				genres = process_multiple(genres)
 				if (len(genres) > 1):
 					# Multiple genres!
 					find_and_list.append({"genre": {'$all': genres}})
@@ -819,7 +828,7 @@ def get_goat_movies(genres: hug.types.multiple, vote_target: hug.types.text, api
 							'valid_key': True,
 							'took': float(hug_timer)}
 			else:
-				genres = process_genres(genres)
+				genres = process_multiple(genres)
 				# The uer has input movie genres
 				if (len(genres) > 1):
 					# Multiple genres detected! Count the quantity of movies w/ all of these genres!
