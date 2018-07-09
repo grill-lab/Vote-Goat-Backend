@@ -1738,29 +1738,24 @@ app.intent('recommend_movie', (conv, { movieGenre }) => {
       if (rec_body.success === true && rec_body.valid_key === true) {
         const quantity_top_k = rec_body.movies.length;
 
-        if (quantity_top_k >= 3) {
-          // We want at least 3 movies to display!
+        if (conv.surface.capabilities.has('actions.capability.SCREEN_OUTPUT')) {
+          /*
+            The user has a screen, let's show the carousel & suggestions
+          */
+          if (quantity_top_k >= 3) {
+            // We want at least 3 movies to display!
+            let parameters = {}; // Creating parameter holder
+            let carousel_items = {}; // Creating carousel item holder
+            let wordy_iterator = ['first', 'second', 'third', 'fourth', 'fifth', 'sixth', 'seventh', 'eighth', 'nineth', 'tenth'];
 
-          let parameters = {}; // Creating parameter holder
-          let carousel_items = {}; // Creating carousel item holder
-          let wordy_iterator = ['first', 'second', 'third', 'fourth', 'fifth', 'sixth', 'seventh', 'eighth', 'nineth', 'tenth'];
-          let iterator_max;
+            for (let iterator = 0; iterator < quantity_top_k; iterator++) { // Iterating over the top k rec_body results!
+              /*
+                Given the quantity of movies returned in the JSON (eventually top-k movies), produce the carousel_items object
+              */
+              const index_value = iterator.toString(); // Creating string representation of index for context data
+              rec_body.movies[iterator].poster_url = (rec_body.movies[iterator].poster_url).replace("http://", "https://"); // Replacing http for https for use in contexts!
+              parameters[index_value] = rec_body.movies[iterator]; // Inserting the 'get_random_movie_list' rec_body contents into the context parameter.
 
-          if (conv.surface.capabilities.has('actions.capability.SCREEN_OUTPUT')) {
-            iterator_max = 9;
-          } else {
-            iterator_max = 2;
-          }
-
-          for (let iterator = 0; iterator < iterator_max; iterator++) { // Iterating over the top k rec_body results!
-            /*
-              Given the quantity of movies returned in the JSON (eventually top-k movies), produce the carousel_items object
-            */
-            const index_value = iterator.toString(); // Creating string representation of index for context data
-            rec_body.movies[iterator].poster_url = (rec_body.movies[iterator].poster_url).replace("http://", "https://"); // Replacing http for https for use in contexts!
-            parameters[index_value] = rec_body.movies[iterator]; // Inserting the 'get_random_movie_list' rec_body contents into the context parameter.
-
-            if (conv.surface.capabilities.has('actions.capability.SCREEN_OUTPUT')) {
               /*
                 Only trigger if the user has a screen.
               */
@@ -1778,16 +1773,12 @@ app.intent('recommend_movie', (conv, { movieGenre }) => {
                 footer: `# ${iterator}`,
                 synonyms: [`${iterator}`, `${wordy_iterator[iterator]}`, `${current_movieTitle}`]
               }
+              // End of for loop
             }
-            // End of for loop
-          }
 
-          conv.contexts.set('list_body', 1, parameters); // Setting the outbound context to include the JSON rec_body parameter data!
+            //conv.contexts.set('speaker_list_body', 0); // Erasing context
+            conv.contexts.set('list_body', 1, parameters); // Setting the outbound context to include the JSON rec_body parameter data!
 
-          if (conv.surface.capabilities.has('actions.capability.SCREEN_OUTPUT')) {
-            /*
-              The user has a screen, let's show the carousel & suggestions
-            */
             chatbase_analytics(
               conv,
               `Experiment ID:${experiment_body.experiment_id}, HUG:${experiment_body.target_hug_function}, AB:${experiment_body.outcome}, KMOV:${quantity_top_k}, SCREEN`, // input_message
@@ -1802,7 +1793,7 @@ app.intent('recommend_movie', (conv, { movieGenre }) => {
               "repeatedCarousel": carousel_items
             });
 
-            conv.contexts.set('speaker_recommend_response', 0, {}); // Erase the context!
+            conv.contexts.set('vote_context', 0); // Erase the context!
 
             return conv.ask(
               new SimpleResponse('Alright, here are a few movies which I think you will like!'),
@@ -1812,56 +1803,89 @@ app.intent('recommend_movie', (conv, { movieGenre }) => {
               }),
               new Suggestions('🗳 Rank Movies', '💾 SIGIR demo', '🎥 SIGIR Movies', `🐐 GOAT Movies`, '🏆 Show Stats', '📑 Help', `🚪 Quit`)
             );
+
           } else {
-            /*
-            Best practice (according to Google) for presenting list/carousel items to speaker-only users is to only provide the first 3 movies.
-            We still hold the data for movies 0-9 in the background, but we only tell the user about the first 3.
-            This can be changed at any time by adding lines w/ incremented '${rec_body[x].title}' tags.
-            */
-            const textToSpeech = `<speak>` +
-              `Would you watch the following movies? <break time="0.25s" /> ` +
-              `"${rec_body.movies[0].title}"? <break time="0.35s" /> ` +
-              `"${rec_body.movies[1].title}"? <break time="0.35s" /> ` +
-              `or "${rec_body.movies[2].title}"? <break time="0.35s" /> ` +
-              `</speak>`;
+            //console.log("recommendMovie: No movies were returned! Movies SHOULD have been returned!");
+            return no_movies_found(conv);
+          }
+        } else {
+          /*
+            The user doesn't have a screen. Let's show them only one movie!
+            // TODO: Upgrade HUG function to accept mongodb limit() value as input parameter (for efficiency gains).
+          */
+          const movie_element = rec_body.movies[0]; // First movie in recommendation list
+          if (quantity_top_k >= 1) {
+            conv.contexts.set('list_body', 0); // Erasing context
+            conv.contexts.set('list_selection', 0); // Erasing context
+            conv.contexts.set('recommend_movie_context', 0); // Erasing context!
 
-            conv.data.speaker_rec_movie_01 = `${rec_body.movies[0].title}####first####1st`;
-            conv.data.speaker_rec_movie_02 = `${rec_body.movies[1].title}####second####2nd`;
-            conv.data.speaker_rec_movie_03 = `${rec_body.movies[2].title}#####third####3rd`;
+            store_movie_data(conv, 'list_selection', movie_element.imdbID, movie_element.title, movie_element.plot, movie_element.year, movie_element.imdbRating, movie_element.genres);
 
-            const textToDisplay = `Would you watch the following movies? \n` +
-                                  `${rec_body.movies[0].title}? \n` +
-                                  `${rec_body.movies[1].title}? \n` +
-                                  `${rec_body.movies[2].title}? \n`;
+            var textToSpeech = `<speak>`;
 
-            conv.contexts.set('speaker_recommend_response', 1, {
-              // Need this placeholder to help trigger the 'speaker_recommend_response' intent!
-              "placeholder": "placeholder"
-            });
+            let title_let = (movie_element.title).replace('&', 'and'); // & characters invalidate SSML
+            const greeting = [`How about the movie "${title_let}"? `,
+                              `I found the movie "${title_let}". `,
+                              `I think you might like the film "${title_let}"! `,
+                              `Want to watch "${title_let}"? `,
+                              `Are you interested in watching "${title_let}"? `];
+            textToSpeech += greeting[Math.floor(Math.random() * greeting.length)]
 
-            conv.contexts.set('recommend_movie_context', 0, {});
+            const genre_list = movie_element.genres;
+            if (genre_list.length >= 1) {
+              textToSpeech += `It's an ${genre_list} movie<break time="0.35s" />`;
+            }
+
+            let age_rating_text;
+            if (["N/A", "NOT RATED", "UNRATED", "NR", "Not Rated", "Not rated", "Unrated"].includes(movie_element.rate_desc)) {
+              // Invalid ratings
+              age_rating_text = 'an unrated movie';
+            } else {
+              // Valid rating
+              age_rating_text = `rated "${movie_element.rate_desc}"`;
+            }
+
+            textToSpeech += `which was released in ${movie_element.year}. It's ${age_rating_text}, and has an IMDB rating of ${movie_element.imdbRating} out of 10. <break time="0.35s" /> `;
+
+            const outro = [`So, would you watch this film?`, `Interested in watching ${title_let}?`, `So, want to watch "${title_let}"`, `Is this a movie you'd consider watching?`, `Are you interested in watching "${title_let}"?`];
+            textToSpeech += outro[Math.floor(Math.random() * outro.length)];
+
+            const alternative = [
+              `Or do you need more info about "${title_let}"?`,
+              `Or would you like to know more about "${title_let}" first?`,
+              ``,
+              ``,
+              ``
+            ]; // 40% chance of asking
+            textToSpeech += alternative[Math.floor(Math.random() * alternative.length)];
+
+            textToSpeech += `</speak>`;
+
+            const textToDisplay = `Title: ${title_let}\n` +
+            `Year: ${movie_element.year}\n` +
+            `Genre: ${genre_list}\n` +
+            `IMDB Rating: ${movie_element.imdbRating}`;
+
+            store_repeat_response(conv, 'recommend_movie', textToSpeech, textToDisplay); // Storing repeat info
 
             chatbase_analytics(
               conv,
-              `Experiment ID:${experiment_body.experiment_id}, HUG:${experiment_body.target_hug_function}, AB:${experiment_body.outcome}, KMOV:3, SPEAKER`, // input_message
+              `Speaker received a movie recommendation!`, // input_message
               'recommend_movie', // input_intent
               'Win' // win_or_fail
             );
 
-            store_repeat_response(conv, 'recommendMovie', textToSpeech, textToDisplay); // Storing repeat info
-
             return conv.ask(
               new SimpleResponse({
+                // Sending the details to the user
                 speech: textToSpeech,
                 text: textToDisplay
               })
             );
+          } else {
+            //console.log("recommendMovie: No movies were returned! Movies SHOULD have been returned!");
+            return no_movies_found(conv);
           }
-        } else {
-          //console.log("recommendMovie: No movies were returned! Movies SHOULD have been returned!");
-          // RATHER THAN SENDING TO ERROR, REDIRECT TO FALLBACK?
-          //return catch_error(conv, 'No movies found', 'recommendation');
-          return no_movies_found(conv);
         }
       } else if (rec_body.success === false && rec_body.valid_key === true && rec_body.error_message === 'Insufficient movies') {
         // We couldn't find any movies
@@ -1881,206 +1905,6 @@ app.intent('recommend_movie', (conv, { movieGenre }) => {
   .catch(error_message => {
     return catch_error(conv, error_message, 'recommendation');
   });
-});
-
-app.intent('speaker_recommend_response', (conv) => {
-  /*
-    Intent for responding to movie recommnedation speaker responses.
-    TODO:
-      * GET RAW INPUT!
-      * CHECK FOR REQ'D CONV DATA!
-      * Check presence of conv data in user input
-  */
-  if (((conv.data).hasOwnProperty('speaker_rec_movie_01')) && (typeof(conv.data.speaker_rec_movie_01) !== "undefined")) {
-    /*
-      The conv data exists!
-    */
-    conv.data.fallbackCount = 0; // Required for tracking fallback attempts!
-
-    const speaker_rec_movie_01_list = (conv.data.speaker_rec_movie_01).split("####"); // [`${rec_body.movies[0].title`, 'first', '1st`]
-    const speaker_rec_movie_02_list = (conv.data.speaker_rec_movie_02).split("####");
-    const speaker_rec_movie_03_list = (conv.data.speaker_rec_movie_03).split("####");
-
-    const raw_input = (conv.input.raw).toString();
-    search_raw_input (raw_input, speaker_rec_movie_01_list, speaker_rec_movie_02_list, speaker_rec_movie_03_list)
-    .then(selection => {
-      // selection is going to be '1', '2' or '3'
-      if ((selection === '0') || (selection === '1') || (selection === '2')) {
-        // The user successfully selected the
-        let movie_element = conv.contexts.get('list_body').parameters[parseInt(selection)]; // Where we'll store the JSON details of the clicked item!
-
-        console.log(`${movie_element}`);
-
-        const options = {
-          //  HUG REST GET request parameters
-          gg_id: parse_userId(conv), // Anonymous google id
-          k_mov_ts: movie_element.k_mov_ts,
-          clicked_movie: movie_element.imdbID, // Passing the movie ID acquired via context
-          api_key: 'HUG_REST_API_KEY'
-        };
-
-        return hug_request('HUG', 'log_clicked_item', 'POST', options)
-        .then(() => {
-          let title_let = (movie_element.title).replace('&', 'and'); // & characters invalidate SSML
-          store_movie_data(conv, 'list_selection', movie_element.imdbID, movie_element.title, movie_element.plot, movie_element.year, movie_element.imdbRating, movie_element.genres);
-
-          const genre_list = movie_element.genres;
-          const actor_list = helpExtract(movie_element.actors);
-          const director_list = helpExtract(movie_element.director);
-
-          var textToSpeech = `<speak>`;
-
-          if (genre_list.length > 1) {
-            textToSpeech += `"${title_let}" is an ${genre_list} movie, with a cast primarily comprised of ${actor_list}. <break time="0.35s" />`;
-          } else if (genre_list.length === 1) {
-            textToSpeech += `"${title_let}" is an ${genre_list} movie, with a cast primarily comprised of ${actor_list}. <break time="0.35s" />`;
-          } else {
-            textToSpeech += `The cast of "${title_let}" is primarily comprised of ${actor_list}. <break time="0.35s" />`;
-          }
-
-          textToSpeech += `It was released in ${movie_element.year}, directed by ${director_list} and has an IMDB rating of ${movie_element.imdbRating} out of 10. <break time="0.35s" /> ` +
-            `Are you interested in watching "${title_let}"?` +
-            `</speak>`;
-
-          const textToDisplay = `Title: ${title_let}\n` +
-          `Year: ${movie_element.year}\n` +
-          `Genre: ${genre_list}\n` +
-          `Director: ${director_list}\n` +
-          `IMDB Rating: ${movie_element.imdbRating}`;
-
-          store_repeat_response(conv, 'itemSelected', textToSpeech, textToDisplay); // Storing repeat info
-
-          chatbase_analytics(
-            conv,
-            `User selected a recommended movie!`, // input_message
-            'speaker_recommend_response', // input_intent
-            'Win' // win_or_fail
-          );
-
-          return conv.ask(
-            new SimpleResponse({
-              // Sending the details to the user
-              speech: textToSpeech,
-              text: textToDisplay
-            })
-          );
-        }) // END of the GET request!
-        .catch(error_message => {
-          return catch_error(conv, error_message, 'recommendation');
-        });
-
-      } else {
-        // This should never trigger!
-        return genericFallback(conv, `speaker_recommend_response`);
-      }
-    })
-    .catch(() => {
-      return genericFallback(conv, `speaker_recommend_response`);
-    });
-    console.warn(`Speaker REC Respone: raw input = "${raw_input}",  `);
-
-    // TODO: HANDLE FALLBACK!
-
-  } else {
-    /*
-      Conv data does not exist, send them to no context handling!
-    */
-    return handle_no_contexts(conv, 'speaker_recommend_response.fallback');
-  }
-});
-
-function search_raw_input (raw_input, list1, list2, list3) {
-  /*
-    Search for matching list synonym within the raw_input string.
-  */
-  return new Promise((resolve, reject) => {
-    let list_1_detections = 0;
-    let list_2_detections = 0;
-    let list_3_detections = 0;
-
-    // [`${rec_body.movies[0].title`, 'first', '1st`]
-    // Let's give more weight to the first iteration! To prevent ordinal triggering others titles (potentially)
-    const synonym_weights = [1, 0.25, 0.25];
-
-    for (let iterator = 0; iterator < list1.length; iterator++) {
-      /*
-        Iterating over the movie synonyms.
-      */
-      if ((raw_input).includes(list1[iterator])) {
-        // The term was detected!
-        list_1_detections += synonym_weights[iterator];
-      } else if ((raw_input).includes(list2[iterator])) {
-        // The term was detected!
-        list_2_detections += synonym_weights[iterator];
-      } else if ((raw_input).includes(list3[iterator])) {
-        // The term was detected!
-        list_3_detections += synonym_weights[iterator];
-      }
-    }
-    if ((list_1_detections === 0) && (list_2_detections === 0) && (list_3_detections === 0)) {
-      // We detected no matches!
-      reject('NO_MATCH');
-    } else {
-      //
-      if ((list_1_detections > list_2_detections) && (list_1_detections > list_3_detections)) {
-        resolve('0');
-      } else if ((list_2_detections > list_1_detections) && (list_2_detections > list_3_detections)) {
-        resolve('1');
-      } else if ((list_3_detections > list_1_detections) && (list_3_detections > list_2_detections)) {
-        resolve('2');
-      } else {
-        /*
-         They managed to trigger multiple, let's throw them to the fallback!
-        */
-        reject('NO_MATCH');
-      }
-    }
-  });
-
-}
-
-app.intent('speaker_recommend_response.fallback', (conv) => {
-  /*
-    User responded unexpectedly to
-  */
-  if (((conv.data).hasOwnProperty('speaker_rec_movie_01')) && (typeof(conv.data.speaker_rec_movie_01) !== "undefined")) {
-    /*
-      The conv data exists!
-    */
-    const speaker_rec_movie_01_list = (conv.data.speaker_rec_movie_01).split("####");
-    const speaker_rec_movie_02_list = (conv.data.speaker_rec_movie_02).split("####");
-    const speaker_rec_movie_03_list = (conv.data.speaker_rec_movie_03).split("####");
-
-    const textToSpeech = `<speak>` +
-      `I didn't catch that, would you watch "${speaker_rec_movie_01_list[0]}",<break time="0.175s" /> "${speaker_rec_movie_02_list[0]}"<break time="0.175s" /> or "${speaker_rec_movie_03_list[0]}"? <break time="0.35s" /> ` +
-      `</speak>`;
-    const textToDisplay = `I didn't catch that, which would you watch? \n` +
-                          `${rec_body.movies[0].title}? \n` +
-                          `${rec_body.movies[1].title}? \n` +
-                          `${rec_body.movies[2].title}? \n`;
-    chatbase_analytics(
-      conv,
-      `Speaker movie rec fallback`, // input_message
-      'speaker_recommend_response.fallback', // input_intent
-      'Fail' // win_or_fail
-    );
-
-    store_repeat_response(conv, 'speaker_recommend_response.fallback', textToSpeech, textToDisplay); // Storing repeat info
-
-    return conv.ask(
-      new SimpleResponse({
-        speech: textToSpeech,
-        text: textToDisplay
-      })
-    );
-
-  } else {
-    /*
-      Conv data does not exist, send them to no context handling!
-    */
-    return handle_no_contexts(conv, 'speaker_recommend_response.fallback');
-  }
-
 });
 
 function no_movies_found (conv) {
@@ -2245,15 +2069,7 @@ app.intent('item.selected', (conv, input, option) => {
       conv.close('You selected an unknown item from the list or carousel, for safety the bot will quit.');
     }
 
-    const options = {
-      //  HUG REST GET request parameters
-      gg_id: parse_userId(conv), // Anonymous google id
-      k_mov_ts: movie_element.k_mov_ts,
-      clicked_movie: movie_element.imdbID, // Passing the movie ID acquired via context
-      api_key: 'HUG_REST_API_KEY'
-    };
-
-    return hug_request('HUG', 'log_clicked_item', 'POST', options)
+    return hug_request('HUG', 'log_clicked_item', 'POST', {gg_id: parse_userId(conv), k_mov_ts: movie_element.k_mov_ts, clicked_movie: movie_element.imdbID, api_key: 'HUG_REST_API_KEY'})
     .then(() => {
       //console.log('Successfully posted the clicked item to hug/mongodb!');
 
@@ -2573,12 +2389,31 @@ app.intent('where_to_watch', (conv) => {
   if (conv.surface.capabilities.has('actions.capability.SCREEN_OUTPUT') && conv.surface.capabilities.has('actions.capability.WEB_BROWSER')) {
     return where_to_watch_helper(conv);
   } else {
-    conv.close(
-      new SimpleResponse({
-        speech: '<speak>Sorry, this function requires both screen and web browser functionality. Please switch device, or try Googling where to watch this movie.</speak>',
-        text: 'Sorry, this function requires both screen and web browser functionality. Please switch device, or try Googling where to watch this movie.'
-      })
-    );
+    if (typeof(conv.contexts.get('vote_context')) !== 'undefined') {
+      if (typeof(conv.contexts.get('vote_context').parameters['mode']) !== 'undefined') {
+        const movie_title = conv.contexts.get('vote_context').parameters['title']; // Retrieving the title
+        conv.close(
+          new SimpleResponse({
+            speech: `<speak>Sorry, this function requires both screen and web browser functionality. Please switch device, or try Googling where to watch "${movie_title}".</speak>`,
+            text: 'Sorry, this function requires both screen and web browser functionality. Please switch device, or try Googling where to watch "${movie_title}".'
+          })
+        );
+      } else {
+        conv.close(
+          new SimpleResponse({
+            speech: '<speak>Sorry, this function requires both screen and web browser functionality. Please switch device, or try Googling where to watch this movie.</speak>',
+            text: 'Sorry, this function requires both screen and web browser functionality. Please switch device, or try Googling where to watch this movie.'
+          })
+        );
+      }
+    } else {
+      conv.close(
+        new SimpleResponse({
+          speech: '<speak>Sorry, this function requires both screen and web browser functionality. Please switch device, or try Googling where to watch this movie.</speak>',
+          text: 'Sorry, this function requires both screen and web browser functionality. Please switch device, or try Googling where to watch this movie.'
+        })
+      );
+    }
   }
 });
 
@@ -3107,7 +2942,7 @@ app.intent('SIGIR_Movies', (conv, { movieGenre }) => {
             */
             let apologySpeech;
             let apologyText;
-            if (movie_genres_comma_separated_string !== "") {
+            if (movie_genres_comma_separated_string !== "" && movie_genres_comma_separated_string !== "NONE") {
               apologySpeech = `Sorry, I couldn't find any SIGIR curated movies with the genres ${movie_genres_comma_separated_string} for you.<break time="0.2s" /> Try fewer genres?<break time="0.35s" />`;
               apologyText = `Sorry, I couldn't find any SIGIR curated movies with the genres ${movie_genres_comma_separated_string} for you. Try fewer genres?`;
             } else {
@@ -3344,20 +3179,21 @@ app.intent('voted', (conv, { voting }) => {
                   /*
                     The user doesn't have a screen, so let's talk to them.
                   */
+                  const success_response = [
+                    `Huzzah, a successful movie recommendation! Alright, `,
+                    `Great to hear! Now then, `,
+                    `Cool, try googling where to watch it. So,`,
+                    `Cool, I like it too! So,`
+                  ];
+
                   if (conv.surface.capabilities.has('actions.capability.SCREEN_OUTPUT')) {
                     // Screen
-                    textToSpeech = `<speak>` +
-                      `Huzzah, a successful movie recommendation! <break time="0.25s" />What next?` +
-                      `</speak>`;
-                    textToDisplay = `Huzzah, a successful movie recommendation! What next?`;
+                    textToSpeech = `<speak>${success_response[Math.floor(Math.random() * success_response.length)]} <break time="0.25s" />what next?</speak>`;
+                    textToDisplay = `${success_response[Math.floor(Math.random() * success_response.length)]} what next?`;
                   } else {
                     // No screen
-                    textToSpeech = `<speak>` +
-                      `Huzzah, a successful movie recommendation! <break time="0.25s" /> ` +
-                      `What next? Rank movies, get another movie recommendation or quit?` +
-                      `</speak>`;
-                    textToDisplay = `Huzzah, a successful movie recommendation! \n\n` +
-                      `What do you want to do next? Rank movies, get another movie recommendation or quit?`;
+                    textToSpeech = `<speak>${success_response[Math.floor(Math.random() * success_response.length)]} <break time="0.25s" /> what next? Rank movies, get another movie recommendation or quit?</speak>`;
+                    textToDisplay = `${success_response[Math.floor(Math.random() * success_response.length)]} what do you want to do next? Rank movies, get another movie recommendation or quit?`;
                   }
                 }
               } else {
