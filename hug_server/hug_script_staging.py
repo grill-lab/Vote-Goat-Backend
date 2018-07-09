@@ -22,7 +22,7 @@ def google_analytics(request, function_name):
 	# Tracking usage via Google Analytics (using the measurement protocol).
 	# Why? Because the only insight into the use of HUG currently is the access & error logs (insufficient).
 	"""
-  google_analytics_code = 'google_analytics_code'
+	google_analytics_code = 'google_analytics_code'
 	user_agent = str(request.user_agent)
 	user_source = str(request.referer)
 	user_request = str(request.uri)
@@ -519,45 +519,46 @@ def downvote_many_movies(gg_id: hug.types.text, movie_ids: hug.types.multiple, c
 						'valid_key': True,
 						'took': float(hug_timer)}
 
-      		for movie_id in movie_ids:
-				# Iterating over the multiple movie ids
-				if (db.movie.find({"imdbID": movie_id}).count() > 0):
-					result = db.user_ratings.find({"$and": [{"userId": user_id}, {"imdbID": movie_id}]}).count() # Has the user voted on this movie?
+			counter = 0
 
+			for movie_id in movie_ids:
+				# Iterating over the multiple movie ids
+				result = db.user_ratings.find({"$and": [{"userId": user_id}, {"imdbID": movie_id}]}).count() # Has the user voted on this movie?
+
+				if (counter == 0):
+					# We only want to run this once, to save resources!
 					recommendation_exist_check = db.recommendation_history.find({"userId": user_id}).count()
 					if (recommendation_exist_check > 0):
 						# Check that a recommendation history item exists before attempting to update it
 						latest_usr_rec_ts = list(db.recommendation_history.find({"userId": user_id}).sort('k_mov_timestamp', -1).limit(1))[0]['k_mov_timestamp'] # Getting the user's last recommendation session timestamp
 						db.recommendation_history.update_one({"userId": user_id, "k_mov_timestamp": latest_usr_rec_ts}, {"$set": {"voted": 0}}) # Recording the user's vote within the recommendation section
+					counter = 1
 
-					if (result == 0):	# User hasn't rated this movie yet.
-						movie_genres = list(db.movie.find({"imdbID": movie_id}))[0]['genre'] # Including the movie genres in the user ratings for ML movie recommendations
-						db.user_ratings.insert_one({"userId": user_id, "imdbID": movie_id, "rating": 0, "genres": movie_genres, "timestamp": current_time, "conversation_id": conv_id, "raw_vote": raw_vote})
-						db.Users.update_one({"userId": user_id, "gg_id": gg_id}, {"$inc": {"total_movie_votes": 1, "total_movie_downvotes": 1}}) # Updating the user's voting stats
+				if (result == 0):	# User hasn't rated this movie yet.
+					movie_genres = list(db.movie.find({"imdbID": movie_id}))[0]['genre'] # Including the movie genres in the user ratings for ML movie recommendations
+					db.user_ratings.insert_one({"userId": user_id, "imdbID": movie_id, "rating": 0, "genres": movie_genres, "timestamp": current_time, "conversation_id": conv_id, "raw_vote": raw_vote})
+					db.Users.update_one({"userId": user_id, "gg_id": gg_id}, {"$inc": {"total_movie_votes": 1, "total_movie_downvotes": 1}}) # Updating the user's voting stats
 
-						if (current_time >= 1531033200) and (current_time < 1531479600) and (sigir == 1):
-							# SIGIR attendee
-							db.movie.update_one({"imdbID": movie_id}, {"$inc": {"goat_downvotes": 1, "sigir_downvotes": 1, "total_goat_votes": 1, "total_sigir_votes": 1}}) # Updating the movie's voting stats
-						else:
-							# Normal user
-							db.movie.update_one({"imdbID": movie_id}, {"$inc": {"goat_downvotes": 1, "total_goat_votes": 1}}) # Updating the movie's voting stats
-
-						inc_object = {}
-
-						for genre in movie_genres: # Tallying genre voting data
-							target = str(genre)+'.down'
-							inc_object[target] = int(1)
-
-						google_analytics(request, 'mass_downvoted_unranked_movie')
-						db.user_genre_vote_tally.update_one({"userId": user_id}, {"$inc": inc_object})
+					if (current_time >= 1531033200) and (current_time < 1531479600) and (sigir == 1):
+						# SIGIR attendee
+						db.movie.update_one({"imdbID": movie_id}, {"$inc": {"goat_downvotes": 1, "sigir_downvotes": 1, "total_goat_votes": 1, "total_sigir_votes": 1}}) # Updating the movie's voting stats
 					else:
-						# Overwrite rating entry using update_one & $set
-						db.user_ratings.update_one({"userId": user_id, "imdbID": movie_id}, {"$set": {"rating": 0, "timestamp": current_time}})
-						google_analytics(request, 'mass_downvoted_ranked_movie')
+						# Normal user
+						db.movie.update_one({"imdbID": movie_id}, {"$inc": {"goat_downvotes": 1, "total_goat_votes": 1}}) # Updating the movie's voting stats
+
+					inc_object = {}
+
+					for genre in movie_genres: # Tallying genre voting data
+						target = str(genre)+'.down'
+						inc_object[target] = int(1)
+
+					google_analytics(request, 'mass_downvoted_unranked_movie')
+					db.user_genre_vote_tally.update_one({"userId": user_id}, {"$inc": inc_object})
 				else:
-					# There's no movie matching the imdbID
-					google_analytics(request, 'submit_movie_rating_imdbId_error')
-					#print("imdbID '" + str(movie_id) + "' does not exist!")
+					# Overwrite rating entry using update_one & $set
+					db.user_ratings.update_one({"userId": user_id, "imdbID": movie_id}, {"$set": {"rating": 0, "timestamp": current_time}})
+					google_analytics(request, 'mass_downvoted_ranked_movie')
+
 			return {'success': True,
 					'movie_ids': movie_ids,
 					'quantity_movies_input': len(movie_ids),
@@ -577,7 +578,6 @@ def downvote_many_movies(gg_id: hug.types.text, movie_ids: hug.types.multiple, c
 		return {'success': False,
 				'valid_key': False,
 				'took': float(hug_timer)}
-
 
 ##################
 
