@@ -253,10 +253,9 @@ function store_fallback_response (conv, fallback_messages, suggestions) {
   // NOTE: No 3rd fallback - we will quit!
 
   // Storing the comma separated suggestion string in conv data
-  //console.log(`Stored fallback suggestion string: "${parse_parameter_list(suggestions, ',')}"`);
   return parse_parameter_list(suggestions, ', short')
-  .then(movie_genres_string => {
-    conv.data.suggestions = movie_genres_string;
+  .then(suggestion_string => {
+    conv.data.suggestions = suggestion_string;
   });
 }
 
@@ -768,7 +767,7 @@ function fallback_body (conv, fallback_name) {
     Reducing code duplication.
     We don't check for the existence of
   */
-  if (conv.data.fallbackCount >= 2) {
+  if (conv.data.fallbackCount > 1) {
     // Google best practice is to quit upon the 3rd attempt
     console.log("User misunderstood 3 times, quitting!");
     chatbase_analytics(
@@ -854,10 +853,13 @@ function genericFallback(conv, intent_name) {
       Both contexts and conv.data expire after a certain period of inactivity.
     */
     conv.data.fallbackCount = 0 // Set the fallback to 0, enabling genericFallback to work
+
     conv.data.fallback_text_0 = "Sorry, what do you want to do next?";
-    conv.data.fallback_text_1 = "I didn't catch that. Do you want to rank movies, receive movie recommendations, view your leaderboard position or quit?";
     conv.data.fallback_speech_0 = "<speak>Sorry, what do you want to do next?</speak>";
+
+    conv.data.fallback_text_1 = "I didn't catch that. Do you want to rank movies, receive movie recommendations, view your leaderboard position or quit?";
     conv.data.fallback_speech_1 = "<speak>I didn't catch that. Do you want to rank movies, receive movie recommendations, view your leaderboard position or quit?</speak>";
+
     conv.data.suggesions = ['🗳 Rank Movies', '🤔 Movie Recommendation', '🏆 Show Stats', '💾 SIGIR demo', '🎥 SIGIR Movies', `🐐 GOAT Movies`, '📑 Help', `🚪 Quit`];
     return fallback_body(conv, fallback_name);
   } else {
@@ -1380,7 +1382,7 @@ app.intent('goat', (conv, { movieGenre }) => {
       .then(body => {
         if (body.success === true && body.valid_key === true && body.hasOwnProperty('goat_movies')) {
           // Successfully retrieved 'GOAT' movies
-          if (body.goat_movies.length > 1) {
+          if (body.goat_movies.length > 0) {
             // Verifying that we've actually got movies to display
             let movie_title_length_limit;
             //let goat_text = ``;
@@ -1402,9 +1404,8 @@ app.intent('goat', (conv, { movieGenre }) => {
               movie_title_length_limit = Math.floor((640 - 72)/body.goat_movies.length)
             }
 
-
             if (conv.surface.capabilities.has('actions.capability.SCREEN_OUTPUT')) {
-              // TODO: Make use of table cards to display this information once it's no longer in developer preview
+              // TODO: Maske use of table cards to display this information once it's no longer in developer preview
               let sum_movie_title_lengths; // let to hold summed length of movie titles
               let goat_text = ``;
 
@@ -1547,6 +1548,8 @@ app.intent('goat', (conv, { movieGenre }) => {
                 'Win' // win_or_fail
               );
 
+              store_repeat_response(conv, 'getGoat', textToSpeech, textToDisplay); // Storing repeat info
+
               conv.ask(
                 new SimpleResponse({
                   speech: textToSpeech,
@@ -1557,7 +1560,6 @@ app.intent('goat', (conv, { movieGenre }) => {
                   text: `What do you want to do next? Rank Movies, get a Movie Recommendation, view your stats, get help or quit?`
                 })
               );
-              store_repeat_response(conv, 'getGoat', textToSpeech, textToDisplay); // Storing repeat info
             }
           } else {
             // This should never trigger, but better safer than sorry!
@@ -1594,6 +1596,8 @@ app.intent('goat', (conv, { movieGenre }) => {
             'goat', // input_intent
             'Fail' // win_or_fail
           );
+
+          store_repeat_response(conv, 'getGoat', textToSpeech, textToDisplay); // Enabling the user to repeat the fallback text...
 
           conv.ask(
             new SimpleResponse({
@@ -1818,18 +1822,20 @@ app.intent('recommend_movie', (conv, { movieGenre }) => {
             conv.contexts.set('list_body', 0); // Erasing context
             conv.contexts.set('list_selection', 0); // Erasing context
             conv.contexts.set('recommend_movie_context', 0); // Erasing context!
+            conv.contexts.set('voted-followup', 0); // Erasing context!
 
             store_movie_data(conv, 'list_selection', movie_element.imdbID, movie_element.title, movie_element.plot, movie_element.year, movie_element.imdbRating, movie_element.genres);
 
             var textToSpeech = `<speak>`;
 
             let title_let = (movie_element.title).replace('&', 'and'); // & characters invalidate SSML
+            conv.data.speaker_title = title_let;
             const greeting = [`How about the movie "${title_let}"? `,
                               `I found the movie "${title_let}". `,
                               `I think you might like the film "${title_let}"! `,
                               `Want to watch "${title_let}"? `,
                               `Are you interested in watching "${title_let}"? `];
-            textToSpeech += greeting[Math.floor(Math.random() * greeting.length)]
+            textToSpeech += greeting[Math.floor(Math.random() * greeting.length)];
 
             const genre_list = movie_element.genres;
             if (genre_list.length >= 1) {
@@ -2169,24 +2175,78 @@ app.intent('recommend_movie.fallback', (conv) => {
   */
   //console.log("RECOMMEND FALLBACK TRIGGERED!");
   //const recommendation_context = conv.contexts.get('recommend_movie_context');
+  var CAROUSEL_FALLBACK_DATA;
 
-  if (typeof(conv.contexts.get('recommend_movie_context')) !== "undefined" && typeof(conv.contexts.get('list_body')) !== "undefined") {
-    var CAROUSEL_FALLBACK_DATA;
-    if (conv.surface.capabilities.has('actions.capability.SCREEN_OUTPUT')) {
+  if (conv.surface.capabilities.has('actions.capability.SCREEN_OUTPUT')) {
+    CAROUSEL_FALLBACK_DATA = [
+      "Sorry, which film was that?",
+      "I didn't catch that. Could you repeat your movie selection?",
+    ];
+    if (typeof(conv.contexts.get('recommend_movie_context')) !== "undefined" && typeof(conv.contexts.get('list_body')) !== "undefined") {
+      if ((!(conv.data).hasOwnProperty('fallbackCount')) || (typeof(conv.data.fallbackCount) === "undefined")) {
+        // Checking that the fallbackcount conv data exists
+        conv.data.fallbackCount = 0;
+      }
+
+      if (conv.data.fallbackCount >= 2) {
+        // The user failed too many times
+        chatbase_analytics(
+          conv,
+          `User failed the movie recommendation fallback & force quit!`, // input_message
+          'recommend_movie.fallback', // input_intent
+          'Fail' // win_or_fail
+        );
+
+        return conv.close("Unfortunately, Vote Goat was unable to understand user input. Sorry for the inconvenience, let's try again later though? Goodbye.");
+      } else {
+        /*
+          Displaying carousel fallback & forwarding contexts in case of subsequent carousel fallbacks
+        */
+        const textToSpeech = `<speak>${CAROUSEL_FALLBACK_DATA[conv.data.fallbackCount]}</speak>`;
+        const textToDisplay = CAROUSEL_FALLBACK_DATA[conv.data.fallbackCount];
+
+        store_repeat_response(conv, 'listFallback', textToSpeech, textToDisplay); // Storing repeat info
+
+        chatbase_analytics(
+          conv,
+          `We didn't understand what movie the user wanted to watch! Prompted with fallback!`, // input_message
+          'recommend_movie.fallback', // input_intent
+          'Fail' // win_or_fail
+        );
+
+        conv.data.fallbackCount++; // Iterate the fallback counter
+
+        return conv.ask(
+          new SimpleResponse({
+            speech: textToSpeech,
+            text: textToDisplay
+          }),
+          new Carousel({
+            items: conv.contexts.get('recommend_movie_context').parameters['repeatedCarousel']
+          }),
+          new Suggestions('🗳 Rank Movies', '💾 SIGIR demo', '🎥 SIGIR Movies', `🐐 GOAT Movies`, '🏆 Show Stats', '📑 Help', `🚪 Quit`)
+        );
+
+      }
+    } else {
+      /*
+       Shouldn't occur, but better safe than sorry!
+      */
+      return handle_no_contexts(conv, 'recommended_movie_fallback');
+    }
+  } else {
+    // We need to remind users without screens what the movie was
+    if ((typeof(conv.data.speaker_title) !== "undefined") && (conv.data).hasOwnProperty('speaker_title')) {
+      let speaker_title = conv.data.speaker_title;
+
       CAROUSEL_FALLBACK_DATA = [
-        "Sorry, which film was that?",
-        "I didn't catch that. Could you repeat your movie selection?",
-        "I'm having difficulties understanding your movie selection. Which movie from the list are you most interested in watching?"
+        `Sorry, would you watch "${speaker_title}"?`,
+        `I didn't catch that. Would you watch "${speaker_title}"?`
       ];
     } else {
-      // We need to remind users without screens what the movies were!
-      let first_movie = conv.contexts.get('list_body').parameters['0']; // Grabbing the first movie_element
-      let second_movie = conv.contexts.get('list_body').parameters['1']; // Grabbing the second movie_element
-      let third_movie = conv.contexts.get('list_body').parameters['2']; // Grabbing the third movie_element
-
       CAROUSEL_FALLBACK_DATA = [
-        `Sorry, which film was that? "${first_movie.title}", "${second_movie.title}" or "${third_movie.title}"`,
-        `I didn't catch that. Are you interested in "${first_movie.title}", "${second_movie.title}" or "${third_movie.title}"?`
+        `Sorry, are you interested in this movie?`,
+        `I didn't catch that. Are you interested in this movie?`
       ];
     }
 
@@ -2195,8 +2255,8 @@ app.intent('recommend_movie.fallback', (conv) => {
       conv.data.fallbackCount = 0;
     }
 
-    if (conv.data.fallbackCount >= 2) {
-      // The user failed too many times
+    if (conv.data.fallbackCount > 1) {
+      // The user 'fellback' too many times
       chatbase_analytics(
         conv,
         `User failed the movie recommendation fallback & force quit!`, // input_message
@@ -2217,40 +2277,23 @@ app.intent('recommend_movie.fallback', (conv) => {
       chatbase_analytics(
         conv,
         `We didn't understand what movie the user wanted to watch! Prompted with fallback!`, // input_message
-        'recommend_movie.fallback', // input_intent
+        'recommend_movie.fallback.speaker', // input_intent
         'Fail' // win_or_fail
       );
 
       conv.data.fallbackCount++; // Iterate the fallback counter
-      //let carousel = conv.contexts.get('recommend_movie_context').parameters['repeatedCarousel'];
-      if (conv.surface.capabilities.has('actions.capability.SCREEN_OUTPUT')) {
-        return conv.ask(
-          new SimpleResponse({
-            speech: textToSpeech,
-            text: textToDisplay
-          }),
-          new Carousel({
-            items: conv.contexts.get('recommend_movie_context').parameters['repeatedCarousel']
-          }),
-          new Suggestions('🗳 Rank Movies', '💾 SIGIR demo', '🎥 SIGIR Movies', `🐐 GOAT Movies`, '🏆 Show Stats', '📑 Help', `🚪 Quit`)
-        );
-      } else {
-        return conv.ask(
-          new SimpleResponse({
-            speech: textToSpeech,
-            text: textToDisplay
-          })
-        );
-      }
+
+      return conv.ask(
+        new SimpleResponse({
+          speech: textToSpeech,
+          text: textToDisplay
+        })
+      );
+
     }
-  } else {
-    /*
-      Somehow the user triggered the carousel fallback without having the carousel contexts.
-     Shouldn't occur, but better safe than sorry!
-    */
-    return handle_no_contexts(conv, 'recommended_movie_fallback');
   }
 });
+
 
 app.intent('getHelpAnywhere', conv => {
   /*
@@ -2352,12 +2395,8 @@ app.intent('goodbye', conv => {
   An intent enabling the user to manually quit the bot.
   We can't provide suggestion chips, but button links still work (for outbound survey request on exit).
   */
-  const textToSpeech = `<speak>` +
-    `Sorry to see you go, come back soon? <break time="0.35s" /> ` +
-    `Goodbye.` +
-    `</speak>`;
-  const textToDisplay = `Sorry to see you go, come back soon? \n\n` +
-    `Goodbye.`;
+  const textToSpeech = `<speak>Sorry to see you go, come back soon? <break time="0.35s" />Goodbye.</speak>`;
+  const textToDisplay = `Sorry to see you go, come back soon? \n\nGoodbye.`;
 
   chatbase_analytics(
     conv,
@@ -2386,16 +2425,21 @@ app.intent('where_to_watch', (conv) => {
   Similar to moreMovieInfo!
   TODO: Dialogflow input movie title/imdbID, not vote contexts.
   */
-  if (conv.surface.capabilities.has('actions.capability.SCREEN_OUTPUT') && conv.surface.capabilities.has('actions.capability.WEB_BROWSER')) {
+  if (conv.surface.capabilities.has('actions.capability.SCREEN_OUTPUT')) {
+    // Screen
+    //if (conv.surface.capabilities.has('actions.capability.SCREEN_OUTPUT') && conv.surface.capabilities.has('actions.capability.WEB_BROWSER')) {
     return where_to_watch_helper(conv);
   } else {
+    // No screen
     if (typeof(conv.contexts.get('vote_context')) !== 'undefined') {
       if (typeof(conv.contexts.get('vote_context').parameters['mode']) !== 'undefined') {
         const movie_title = conv.contexts.get('vote_context').parameters['title']; // Retrieving the title
         conv.close(
           new SimpleResponse({
-            speech: `<speak>Sorry, this function requires both screen and web browser functionality. Please switch device, or try Googling where to watch "${movie_title}".</speak>`,
-            text: 'Sorry, this function requires both screen and web browser functionality. Please switch device, or try Googling where to watch "${movie_title}".'
+            speech: `<speak>Sorry, this function requires screen functionality. Please switch device, or try Googling where to watch "${movie_title}".</speak>`,
+            //speech: `<speak>Sorry, this function requires both screen and web browser functionality. Please switch device, or try Googling where to watch "${movie_title}".</speak>`,
+            text: `Sorry, this function requires screen functionality. Please switch device, or try Googling where to watch "${movie_title}".`
+            //text: 'Sorry, this function requires both screen and web browser functionality. Please switch device, or try Googling where to watch "${movie_title}".'
           })
         );
       } else {
@@ -2566,11 +2610,8 @@ function where_to_watch_helper (conv) {
         }
       }
 
-      conv.ask(new BrowseCarousel({
-        items: carousel_items
-      }));
-
       conv.ask(
+        new BrowseCarousel({items: carousel_items}),
         new Suggestions(suggestions)
       );
     } else {
@@ -2806,27 +2847,39 @@ app.intent('SIGIR_Movies', (conv, { movieGenre }) => {
                   sum_movie_title_lengths += body.goat_movies[index].title;
                 }
 
-                for (let index = 0; index < body.goat_movies.length; index++) {
-                  // Iterate over movies in GOAT list
-                  let current_rank = index + 1; // Movie's ranking in GOAT list
-                  let movie_title = ``; // Will populate with value in if statement
+                if (body.goat_movies.length == 1) {
+                  /*
+                    We only got the 1 movie.
+                  */
+                  goat_text += `1st: "${body.goat_movies[0].title}" (${body.goat_movies[0].year}) \n`;
+                  goat_voice += `${body.goat_movies[0].title}. <break time="0.3s" />`;
 
-                  if (sum_movie_title_lengths > movie_title_length_limit) {
-                    let temp_title = body.goat_movies[index].title; // Temporary let for holding title text
-                    movie_title = temp_title.substring(0, movie_title_length_limit); // Reducing the length of the movie title
-                  } else {
-                    movie_title = body.goat_movies[index].title; // non-limited movie title
-                  }
+                } else {
+                  /*
+                    We retrieved more than 1 movie - time to iterate!
+                  */
+                  for (let index = 0; index < body.goat_movies.length; index++) {
+                    // Iterate over movies in GOAT list
+                    let current_rank = index + 1; // Movie's ranking in GOAT list
+                    let movie_title = ``; // Will populate with value in if statement
 
-                  if (index !== (body.goat_movies.length - 1)) {
-                    goat_text += `${current_rank}: "${movie_title}" (${body.goat_movies[index].year}) \n`;
-                  } else {
-                    goat_text += `${current_rank}: "${movie_title}" (${body.goat_movies[index].year})`;
-                  }
-                  if (index === (body.goat_movies.length - 1)){
-                    goat_voice += `and ${movie_title}, <break time="0.3s" />`;
-                  } else {
-                    goat_voice += `${movie_title}, <break time="0.3s" />`;
+                    if (sum_movie_title_lengths > movie_title_length_limit) {
+                      let temp_title = body.goat_movies[index].title; // Temporary let for holding title text
+                      movie_title = temp_title.substring(0, movie_title_length_limit); // Reducing the length of the movie title
+                    } else {
+                      movie_title = body.goat_movies[index].title; // non-limited movie title
+                    }
+
+                    if (index !== (body.goat_movies.length - 1)) {
+                      goat_text += `${current_rank}: "${movie_title}" (${body.goat_movies[index].year}) \n`;
+                    } else {
+                      goat_text += `${current_rank}: "${movie_title}" (${body.goat_movies[index].year})`;
+                    }
+                    if (index === (body.goat_movies.length - 1)){
+                      goat_voice += `and ${movie_title}, <break time="0.3s" />`;
+                    } else {
+                      goat_voice += `${movie_title}, <break time="0.3s" />`;
+                    }
                   }
                 }
 
@@ -2841,21 +2894,34 @@ app.intent('SIGIR_Movies', (conv, { movieGenre }) => {
                 })
                 .then(goat_rows_list => {
                   //console.log(`goat rows 2: ${goat_rows_list}`);
+
+                  let movie_or_movies;
+                  let are_or_is;
+                  if (body.goat_movies.length == 1) {
+                    // Only 1 movie
+                    movie_or_movies = 'movie';
+                    are_or_is = 'is';
+                  } else {
+                    // Many movies
+                    movie_or_movies = 'movies';
+                    are_or_is = 'are';
+                  }
+
                   if (movie_genres_comma_separated_string.length > 2 && movie_genres_comma_separated_string !== "NONE") {
                     // The user provided genre parameters
                     // >2 because no movie genres is ` `
                     textToSpeech = `<speak>` +
-                                     `The greatest ${movie_genres_comma_separated_string} movies of all time, as determined by SIGIR 2018 attendees are: <break time="0.35s" /> ` +
+                                     `The greatest ${movie_genres_comma_separated_string} ${movie_or_movies} of all time, as determined by SIGIR 2018 attendees ${are_or_is}: <break time="0.35s" /> ` +
                                       goat_voice +
                                    `</speak>`;
-                    textToDisplay = `The greatest ${movie_genres_comma_separated_string} movies of all time, as determined SIGIR 2018 attendees are:\n\n${goat_text}`;
+                    textToDisplay = `The greatest ${movie_genres_comma_separated_string} ${movie_or_movies} of all time, as determined SIGIR 2018 attendees ${are_or_is}:\n\n${goat_text}`;
                   } else {
                     // The user didn't provide genre parameters
                     textToSpeech = `<speak>` +
-                                     `The greatest movies of all time, as determined by SIGIR 2018 attendees are: <break time="0.35s" /> ` +
+                                     `The greatest ${movie_or_movies} of all time, as determined by SIGIR 2018 attendees ${are_or_is}: <break time="0.35s" /> ` +
                                       goat_voice +
                                    `</speak>`;
-                    textToDisplay = `The greatest movies of all time, as determined by SIGIR 2018 attendees are:\n\n${goat_text}`;
+                    textToDisplay = `The greatest ${movie_or_movies} of all time, as determined by SIGIR 2018 attendees ${are_or_is}:\n\n${goat_text}`;
                   }
                   return goat_rows_list;
                 })
@@ -2885,7 +2951,7 @@ app.intent('SIGIR_Movies', (conv, { movieGenre }) => {
                     }),
                     new Suggestions('🗳 Rank Movies', '🤔 Movie Recommendation', '💾 SIGIR demo', '🎥 SIGIR Movies', '🏆 Show Stats', '📑 Help', `🚪 Quit`)
                   );
-                  store_repeat_response(conv, 'getGoat', textToSpeech, textToDisplay); // Storing repeat info
+                  store_repeat_response(conv, 'SIGIR_Movies', textToSpeech, textToDisplay); // Storing repeat info
                 });
 
               } else {
@@ -2894,30 +2960,44 @@ app.intent('SIGIR_Movies', (conv, { movieGenre }) => {
                   Best practice is to only present 3 list results, not 10.
                   We aught to provide some sort of paging to
                 */
-                if (movie_genres_comma_separated_string !== `` && movie_genres_comma_separated_string !== "NONE") { // TODO: Check if the function returns '' or ' '!
-                  textToSpeech = `<speak>The 3 greatest ${movie_genres_comma_separated_string} movies of all time, as determined by SIGIR 2018 attendees are: <break time="0.35s" />`;
-                  textToDisplay = `The 3 greatest ${movie_genres_comma_separated_string} movies of all time, as determined by SIGIR 2018 attendees are:`;
-                } else {
-                  textToSpeech = `<speak>` +
-                    `The 3 greatest movies of all time, as determined by SIGIR 2018 attendees are: <break time="0.35s" />`;
-                  textToDisplay = `The 3 greatest movies of all time, as determined by SIGIR 2018 attendees are:`;
-                }
+                if ((body.goat_movies).length >= 3) {
+                  // We've got 3 movies to talk about
+                  if (movie_genres_comma_separated_string !== `` && movie_genres_comma_separated_string !== "NONE") { // TODO: Check if the function returns '' or ' '!
+                    textToSpeech = `<speak>The 3 greatest ${movie_genres_comma_separated_string} movies of all time, as determined by SIGIR 2018 attendees are: <break time="0.35s" />`;
+                    textToDisplay = `The 3 greatest ${movie_genres_comma_separated_string} movies of all time, as determined by SIGIR 2018 attendees are:`;
+                  } else {
+                    textToSpeech = `<speak>` +
+                      `The 3 greatest movies of all time, as determined by SIGIR 2018 attendees are: <break time="0.35s" />`;
+                    textToDisplay = `The 3 greatest movies of all time, as determined by SIGIR 2018 attendees are:`;
+                  }
 
-                textToSpeech += `<say-as interpret-as="ordinal">1</say-as> place is ${body.goat_movies[0].title},<break time="0.1s" /> released in ${body.goat_movies[0].year}. <break time="0.35s" />` +
-                `<say-as interpret-as="ordinal">2</say-as> place is ${body.goat_movies[1].title},<break time="0.1s" /> released in ${body.goat_movies[1].year}. <break time="0.35s" />` +
-                `<say-as interpret-as="ordinal">3</say-as> place is ${body.goat_movies[2].title},<break time="0.1s" /> released in ${body.goat_movies[2].year}. <break time="0.35s" />` +
-                `</speak>`;
+                  textToSpeech += `<say-as interpret-as="ordinal">1</say-as> place is ${body.goat_movies[0].title},<break time="0.1s" /> released in ${body.goat_movies[0].year}. <break time="0.35s" />` +
+                  `<say-as interpret-as="ordinal">2</say-as> place is ${body.goat_movies[1].title},<break time="0.1s" /> released in ${body.goat_movies[1].year}. <break time="0.35s" />` +
+                  `<say-as interpret-as="ordinal">3</say-as> place is ${body.goat_movies[2].title},<break time="0.1s" /> released in ${body.goat_movies[2].year}. <break time="0.35s" />` +
+                  `</speak>`;
 
-                textToDisplay += `1st place is ${body.goat_movies[0].title}, released in ${body.goat_movies[0].year}.\n` +
-                `2nd place is ${body.goat_movies[1].title}, released in ${body.goat_movies[1].year}.\n` +
-                `3rd place is ${body.goat_movies[2].title}, released in ${body.goat_movies[2].year}.\n`;
-
+                  textToDisplay += `1st place is ${body.goat_movies[0].title}, released in ${body.goat_movies[0].year}.\n` +
+                  `2nd place is ${body.goat_movies[1].title}, released in ${body.goat_movies[1].year}.\n` +
+                  `3rd place is ${body.goat_movies[2].title}, released in ${body.goat_movies[2].year}.\n`;
+                } else if ((body.goat_movies).length >= 1) {
+                  // We've only got the 1 movie to talk about
+                  if (movie_genres_comma_separated_string !== `` && movie_genres_comma_separated_string !== "NONE") { // TODO: Check if the function returns '' or ' '!
+                    textToSpeech = `<speak>The greatest ${movie_genres_comma_separated_string} movie of all time, as determined by SIGIR 2018 attendees is <break time="0.25s" />${body.goat_movies[0].title}`;
+                    textToDisplay = `The greatest ${movie_genres_comma_separated_string} movie of all time, as determined by SIGIR 2018 attendees is ${body.goat_movies[0].title}`;
+                  } else {
+                    textToSpeech = `<speak>` +
+                      `The greatest movie of all time, as determined by SIGIR 2018 attendees is <break time="0.25s" /> ${body.goat_movies[0].title}`;
+                    textToDisplay = `The greatest movie of all time, as determined by SIGIR 2018 attendees is ${body.goat_movies[0].title}`;
+                  }
+                } // No need for else - already checked!
                 chatbase_analytics(
                   conv,
                   `SIGIR ${movie_genres_comma_separated_string} movies! No screen!`, // input_message
                   'SIGIR_Movies', // input_intent
                   'Win' // win_or_fail
                 );
+
+                store_repeat_response(conv, 'SIGIR_Movies', textToSpeech, textToDisplay); // Storing repeat info
 
                 conv.ask(
                   new SimpleResponse({
@@ -2929,7 +3009,6 @@ app.intent('SIGIR_Movies', (conv, { movieGenre }) => {
                     text: `So, what next?`
                   })
                 );
-                store_repeat_response(conv, 'getGoat', textToSpeech, textToDisplay); // Storing repeat info
               }
             } else {
               // This should never trigger, but better safer than sorry!
@@ -2968,12 +3047,15 @@ app.intent('SIGIR_Movies', (conv, { movieGenre }) => {
               textToDisplay = apologyText +
                 `What do you want to do next? Rank Movies, get a Movie Recommendation, view your stats, get help or quit?`;
             }
+
             chatbase_analytics(
               conv,
               `Couldn't find any SIGIR movies!`, // input_message
               'SIGIR_Movies', // input_intent
               'Fail' // win_or_fail
             );
+
+            store_repeat_response(conv, 'SIGIR_Movies', textToSpeech, textToDisplay); // Storing repeat info
 
             conv.ask(
               new SimpleResponse({
@@ -3301,12 +3383,19 @@ app.intent('repeat', conv => {
     const textToSpeech = conv.data.last_intent_prompt_speech; // The last speech bubble
     const textToDisplay = conv.data.last_intent_prompt_text; // The last text displayed
     const intent_name = conv.data.last_intent_name; // The last intent the user was at
-    const suggestions = conv.data.suggestions;
+
+    let suggestions;
+    if ((conv.data).hasOwnProperty('suggestions')) {
+      // There were suggestions stored in conv data.
+      suggestions = (conv.data.suggestions).split(', ');
+    } else {
+      suggestions = ['🗳 Rank Movies', '🤔 Movie Recommendation', '🏆 Show Stats', '💾 SIGIR demo', '🎥 SIGIR Movies', `🐐 GOAT Movies`, '📑 Help', `🚪 Quit`];
+    }
 
     if (intent_name === 'recommendMovie') {
       // Rather than confuse things, let's just send the use onwards to the movie recommendation fallback.
       chatbase_analytics(conv, `User requested repeat!`, `repeat.carousel`, 'Fail');
-      return genericFallback(conv, 'ItemSelected.fallback');
+      return genericFallback(conv, 'repeat');
     }
 
     if (typeof(conv.data.fallbackCount) === "undefined") {

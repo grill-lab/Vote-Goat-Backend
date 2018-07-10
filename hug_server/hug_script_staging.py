@@ -199,7 +199,7 @@ def submit_movie_rating(gg_id: hug.types.text, movie_id: hug.types.text, rating:
 					if (rating == 1):
 						db.Users.update_one({"userId": user_id, "gg_id": gg_id}, {"$inc": {"total_movie_votes": 1, "total_movie_upvotes": 1}}) # Updating the user's voting stats
 
-						if (current_time >= 1531033200) and (current_time < 1531479600) and (sigir == 1):
+						if (current_time >= 1531033200) and (current_time < 1531479600):
 							# SIGIR attendee
 							db.movie.update_one({"imdbID": movie_id}, {"$inc": {"goat_upvotes": 1, "sigir_upvotes": 1, "total_goat_votes": 1, "total_sigir_votes": 1}}) # Updating the movie's voting stats
 						else:
@@ -208,7 +208,7 @@ def submit_movie_rating(gg_id: hug.types.text, movie_id: hug.types.text, rating:
 					else:
 						db.Users.update_one({"userId": user_id, "gg_id": gg_id}, {"$inc": {"total_movie_votes": 1, "total_movie_downvotes": 1}}) # Updating the user's voting stats
 
-						if (current_time >= 1531033200) and (current_time < 1531479600) and (sigir == 1):
+						if (current_time >= 1531033200) and (current_time < 1531479600):
 							# SIGIR attendee
 							db.movie.update_one({"imdbID": movie_id}, {"$inc": {"goat_downvotes": 1, "sigir_downvotes": 1, "total_goat_votes": 1, "total_sigir_votes": 1}}) # Updating the movie's voting stats
 						else:
@@ -710,9 +710,9 @@ def get_random_movie_list(gg_id: hug.types.text, experiment_id: hug.types.number
 
 			google_analytics(request, 'get_random_movie_list_success')
 			return {'movies': combined_json_list,
-					 'success': True,
-					 'valid_key': True,
-					 'took': float(hug_timer)}
+					'success': True,
+					'valid_key': True,
+					'took': float(hug_timer)}
 		else:
 			# INVALID GG_ID
 			google_analytics(request, 'get_random_movie_list_id_error')
