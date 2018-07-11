@@ -1649,7 +1649,6 @@ app.intent('getLeaderBoards', conv => {
 
   return hug_request('HUG', 'get_user_ranking', 'GET', qs_input)
   .then(body => {
-
     if (body.success === true && body.valid_key === true) {
 
       let textToSpeech;
@@ -1708,8 +1707,41 @@ app.intent('getLeaderBoards', conv => {
         );
       }
 
+    } else if (body.success === false && body.valid_key === true) {
+      /*
+        This shouldn't occur unless an invalid gg_id was provided.
+        Rather than crash out, let's tell them they're new 👍
+      */
+      const textToSpeech = `<speak>` +
+        `You've yet to rank any movies; please rank some movies, the more you vote the better the movie recommendations we can create. ` +
+        `What do you want to do next? Rank Movies, or get help using Vote Goat? <break time="0.25s" /> ` +
+        `</speak>`;
+
+      const textToDisplay = `You've yet to rank any movies; please rank some movies, the more you vote the better the movie recommendations we can create. ` +
+        `What do you want to do next? Rank Movies, or get help using Vote Goat? <break time="0.25s" /> `;
+
+      store_repeat_response(conv, 'getLeaderboard_fail', textToSpeech, textToDisplay); // Storing repeat info
+
+      conv.ask(
+        new SimpleResponse({
+          // Sending the details to the user
+          speech: textToSpeech,
+          text: textToDisplay
+        })
+      );
+      chatbase_analytics(
+        conv,
+        `failed to display leaderboard`, // input_message
+        'getLeaderboard_fail', // input_intent
+        'fail' // win_or_fail
+      );
+      if (conv.surface.capabilities.has('actions.capability.SCREEN_OUTPUT')) {
+        conv.ask(
+          new Suggestions('🗳 Rank Movies', '🤔 Movie Recommendations', '💾 SIGIR demo', '🎥 SIGIR Movies', `🐐 GOAT Movies`, '📑 Help', '🚪 quit')
+        );
+      }
     } else {
-      // Something wrong with the hug function..
+      // Something is wrong with hug
       return catch_error(conv, 'Unexpected error!', 'getLeaderBoards');
     }
 
@@ -3436,7 +3468,7 @@ app.intent('repeat', conv => {
 
       if (conv.surface.capabilities.has('actions.capability.SCREEN_OUTPUT')) {
         conv.ask(
-          new Suggestions(suggestions.split(','))
+          new Suggestions(suggestions)
         );
       }
 

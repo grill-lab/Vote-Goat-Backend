@@ -344,7 +344,7 @@ def get_user_ratings(gg_id: hug.types.text, api_key: hug.types.text, request, hu
 		# API KEY VALID
 		user_id = get_user_id_by_gg_id(gg_id) # Convert gg_id to their incremental user_ratings userID.
 		if user_id is not None:
-			results = db.user_ratings.find({"userId": user_id})
+			results = db.user_ratings.find({"userId": user_id}, {"_id": 0, "userId": 1, "imdbID": 1, "rating": 1})
 
 			combined_json_list = [] # Where we'll store the multiple items within the pymongo pointer
 
@@ -645,7 +645,7 @@ def get_random_movie_list(gg_id: hug.types.text, experiment_id: hug.types.number
 
 			if ((genres != []) and (genres != ["NONE"])):
 				# The user has provided genre parameter data
-				genres = process_multiple(genres)
+				genres = process_multiple(genres) # Parse 'multiple' hug type. TODO: Report multiple bug!
 				if (len(genres) > 1):
 					# Multiple genres!
 					find_and_list.append({"genre": {'$all': genres}})
@@ -660,7 +660,11 @@ def get_random_movie_list(gg_id: hug.types.text, experiment_id: hug.types.number
 			else:
 				result_count = movie_count
 
-			if (result_count <= 2):
+			if (result_count < 3):
+				"""
+				We can't show less than 3 movies in carousels.
+				TODO: Consider that speakers use individual movie recommendations.
+				"""
 				google_analytics(request, 'get_random_movie_list_insufficient_movies')
 				return {'success': False,
 						'error_message': 'Insufficient movies',
@@ -668,17 +672,16 @@ def get_random_movie_list(gg_id: hug.types.text, experiment_id: hug.types.number
 						'took': float(hug_timer)}
 
 			if (movie_count > 100):
+				"""
+				This limits the random movies to the top 20% of sorted movies.
+				TODO: Change this bias
+				"""
 				rnd_max_cap = int(movie_count/5)
 			else:
 				rnd_max_cap = movie_count
 
-			#random_results = []
-			#for movie in range(result_count):
-			#	random_results.append(list(db.movie.find({"$and": find_and_list}, {'_id': False}).sort(sort_target, sorting).limit(1).skip(randint(0, rnd_max_cap)))[0])
-
-			# NOTE: The above prove too slow!
-			random_results = list(db.movie.find({"$and": find_and_list}, {'_id': False}).sort(sort_target, sorting).limit(10).skip(randint(0, rnd_max_cap)))
-
+			movie_projection = {'_id': 0, 'plot': 1, 'year': 1, 'rate_desc': 1, 'poster': 1, 'actors': 1, 'genre': 1, 'director': 1, 'title': 1, 'imdbRating': 1, 'imdbVotes': 1}
+			random_results = list(db.movie.find({"$and": find_and_list}, movie_projection).sort(sort_target, sorting).limit(result_count).skip(randint(0, rnd_max_cap)))
 			random_results = sorted(random_results, key=operator.itemgetter('imdbVotes', 'imdbRating'), reverse=True) # Sort the list of dicts.
 
 			combined_json_list = []
@@ -689,13 +692,10 @@ def get_random_movie_list(gg_id: hug.types.text, experiment_id: hug.types.number
 
 			for result in random_results:
 				imdbID_list.append(result['imdbID']) # Logging the imdbID for storing in mongodb
+
 				combined_json_list.append({'imdbID': result['imdbID'],
 											 'k_mov_ts': timestamp,
-											 'plot': result['plot'],
-											 'year': result['year'],
-											 'rate_desc': result['rate_desc'],
 											 'poster_url': result['poster'],
-											 'actors': result['actors'],
 											 'genres': result['genre'],
 											 'director': result['director'],
 											 'title': result['title'],
