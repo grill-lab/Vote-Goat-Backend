@@ -1209,7 +1209,6 @@ app.intent('Welcome', conv => {
     })
   );
 
-
   if (conv.surface.capabilities.has('actions.capability.SCREEN_OUTPUT')) {
     conv.ask(new Suggestions(suggestion_chips));
   }
@@ -1272,10 +1271,13 @@ app.intent('moreMovieInfo', (conv) => {
         "placeholder": "placeholder"
       });
 
+      /*
+      // NOTE: We can just set an outbound 'vote_context' w/ lifetime 1 in moreMovieInfo's Dialogflow intent page
       conv.contexts.set('vote_context', 1, { // Specifying the data required to vote!
         "mode": requested_mode,
         "movie": movie_imdb_id
       });
+      */
 
       let textToSpeech_prequel = `<speak>Here's more info on ${movie_title}! <break time="0.5s" /> ${movie_title}`;
       let textToDisplay_prequel = `Here's more info on ${movie_title}!\n\n`;
@@ -1346,7 +1348,8 @@ app.intent('moreMovieInfo', (conv) => {
     /*
     The 'vote_context' context is not present.
     */
-    return catch_error(conv, 'No "vote_context" detected!', 'moreMovieInfo');
+    //return catch_error(conv, 'No "vote_context" detected!', 'moreMovieInfo');
+    return handle_no_contexts(conv, 'moreMovieInfo');
   }
 });
 
@@ -2326,7 +2329,6 @@ app.intent('recommend_movie.fallback', (conv) => {
   }
 });
 
-
 app.intent('getHelpAnywhere', conv => {
   /*
   Provides the user the ability to get help anywhere they are in the bot.
@@ -2503,7 +2505,7 @@ function where_to_watch_helper (conv) {
       // mode exists within vote context
       conv.data.fallbackCount = 0; // Required for tracking fallback attempts! // Required for tracking fallback attempts!
 
-      const requested_mode = conv.contexts.get('vote_context').parameters['mode']; // Retrieving the expected voting mode (within a list, or during training)!
+      //const requested_mode = conv.contexts.get('vote_context').parameters['mode']; // Retrieving the expected voting mode (within a list, or during training)!
       const movie_imdb_id = conv.contexts.get('vote_context').parameters['movie']; // Retrieving the movie we want to downvote!
       const movie_title = conv.contexts.get('vote_context').parameters['title']; // Retrieving the title
 
@@ -2528,10 +2530,13 @@ function where_to_watch_helper (conv) {
 
       store_fallback_response(conv, fallback_messages, suggestions);
 
+      /*
+      // TODO: Replace with an outbound vote_context 1
       conv.contexts.set('vote_context', 1, { // Specifying the data required to vote!
         "mode": conv.contexts.get('vote_context').parameters['mode'],
         "movie": conv.contexts.get('vote_context').parameters['movie']
       });
+      */
 
       const textToSpeech = `<speak>` +
         `Check out the following links to watch "${movie_title}" online. Availability may differ based on geographical location.` +
