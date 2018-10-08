@@ -169,7 +169,7 @@ def create_user(gg_id: hug.types.text, api_key: hug.types.text, request, hug_tim
 
 @hug.post(examples='gg_id=anonymous_google_id&movie_id=tt000001&rating=0&mode=training&conv_id=12345&raw_vote=RAW_VOTE&sigir=0&api_key=API_KEY')
 @hug.get(examples='gg_id=anonymous_google_id&movie_id=tt000001&rating=0&mode=training&conv_id=12345&raw_vote=RAW_VOTE&sigir=0&api_key=API_KEY')
-def submit_movie_rating(gg_id: hug.types.text, movie_id: hug.types.text, rating: hug.types.number, mode: hug.types.text, conv_id: hug.types.number, raw_vote: hug.types.text, sigir: hug.types.number, request, api_key: hug.types.text, hug_timer=5):
+def submit_movie_rating(gg_id: hug.types.text, movie_id: hug.types.text, rating: hug.types.number, mode: hug.types.text, conv_id: hug.types.text, raw_vote: hug.types.text, sigir: hug.types.number, request, api_key: hug.types.text, hug_timer=5):
 	"""
 	Submitting an user movie rating to mongodb.
 	URL: https://HOST:PORT/submit_movie_rating?gg_id=anonymous_google_id&movie_id=tt000001&rating=1&api_key=API_KEY
@@ -499,7 +499,7 @@ def get_single_training_movie(gg_id: hug.types.text, sort_target: hug.types.text
 
 @hug.post(examples='gg_id=anonymous_google_id&movie_ids=tt000001,tt000002&conv_id=12345&raw_vote=RAW_VOTE&sigir=0&api_key=API_KEY')
 @hug.get(examples='gg_id=anonymous_google_id&movie_ids=tt000001,tt000002&conv_id=12345&raw_vote=RAW_VOTE&sigir=0&api_key=API_KEY')
-def downvote_many_movies(gg_id: hug.types.text, movie_ids: hug.types.multiple, conv_id: hug.types.number, raw_vote: hug.types.text, sigir: hug.types.number, request, api_key: hug.types.text, hug_timer=5):
+def downvote_many_movies(gg_id: hug.types.text, movie_ids: hug.types.multiple, conv_id: hug.types.text, raw_vote: hug.types.text, sigir: hug.types.number, request, api_key: hug.types.text, hug_timer=5):
 	"""Downvoting multiple movies at a time."""
 	if (check_api_token(api_key) == True):
 		# API KEY VALID
